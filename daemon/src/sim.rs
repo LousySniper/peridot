@@ -37,6 +37,9 @@ pub struct SimLogi {
     pub eq: Vec<i8>,
     /// Reject every equalizer write, like the G733's firmware.
     pub eq_locked: bool,
+    /// Directly connected through a dongle that answers for the device's
+    /// identity while the device itself is off (the G733 does this).
+    pub dongle: bool,
     pub auto_off: u8,
     pub log: Vec<String>,
 }
@@ -74,6 +77,7 @@ impl SimLogi {
             sidetone: 0,
             eq: vec![],
             eq_locked: false,
+            dongle: false,
             auto_off: 0,
             log: vec![],
         }
@@ -129,12 +133,13 @@ impl SimLogi {
             sidetone: 35,
             eq: vec![0, 2, 0, -1, 3],
             eq_locked: false,
+            dongle: false,
             auto_off: 30,
             log: vec![],
         }
     }
 
-    fn index_of(&self, id: u16) -> Option<u8> {
+    pub fn index_of(&self, id: u16) -> Option<u8> {
         self.features.iter().position(|x| *x == id).map(|p| p as u8)
     }
 
@@ -317,6 +322,11 @@ struct SimNodeInner {
     queue: VecDeque<Vec<u8>>,
 }
 
+/// Features a G733-style dongle answers for while its headset is off.
+fn is_identity(feature: Option<u16>) -> bool {
+    matches!(feature, Some(f::ROOT | f::FEATURE_SET | f::DEVICE_FW_VERSION | f::DEVICE_NAME))
+}
+
 /// A simulated HID++ hidraw node: a receiver or a direct device (index 0xFF).
 pub struct SimHidppNode {
     pub receiver: bool,
@@ -382,14 +392,15 @@ impl SimHidppNode {
         let Some(dev) = inner.devices.get_mut(&idx) else { return };
         dev.battery = percent;
         dev.charging = charging;
-        let Some(fi) = dev.index_of(f::UNIFIED_BATTERY) else { return };
-        let m = Message {
-            report: REPORT_LONG,
-            device: idx,
-            sub: fi,
-            address: 0x00,
-            params: vec![percent, 4, charging as u8, 0],
+        let (fi, params) = if let Some(fi) = dev.index_of(f::UNIFIED_BATTERY) {
+            (fi, vec![percent, 4, charging as u8, 0])
+        } else if let Some(fi) = dev.index_of(f::ADC_MEASUREMENT) {
+            let mv = dev.voltage.to_be_bytes();
+            (fi, vec![mv[0], mv[1], 0x01 | if charging { 0x02 } else { 0 }])
+        } else {
+            return;
         };
+        let m = Message { report: REPORT_LONG, device: idx, sub: fi, address: 0x00, params };
         self.push(&mut inner, m.encode());
     }
 
@@ -459,6 +470,12 @@ impl Transport for SimHidppNode {
                 address: m.sub,
                 params: vec![m.address, if self.receiver { 0x08 } else { 0x01 }],
             },
+            Some(d) if !d.online && d.dongle && is_identity(d.features.get(m.sub as usize).copied()) => {
+                match d.respond(m.sub, m.function(), &m.params) {
+                    Ok(params) => Message { report: reply_report(params.len()).max(m.report), device: m.device, sub: m.sub, address: m.address, params },
+                    Err(code) => Message { report: REPORT_LONG, device: m.device, sub: 0xFF, address: m.sub, params: vec![m.address, code] },
+                }
+            }
             Some(d) if !d.online => {
                 if self.receiver {
                     Message { report: REPORT_SHORT, device: m.device, sub: 0x8F, address: m.sub, params: vec![m.address, 0x09] }

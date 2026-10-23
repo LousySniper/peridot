@@ -219,6 +219,40 @@ fn logitech_headset_direct() {
 }
 
 #[test]
+fn logitech_headset_switched_on_after_startup_gets_all_its_settings() {
+    // The G733's dongle answers for the headset's name and features while the
+    // headset is off; everything else waits until it's switched on.
+    let mut sim = SimLogi::headset("G733 Gaming Headset", 0x79);
+    sim.online = false;
+    sim.dongle = true;
+    let node = SimHidppNode::new("headset", false, vec![(0xFF, sim)]);
+    let (sink, rx) = sink();
+    let t: Arc<dyn Transport> = node.clone();
+    let be = receiver::start(t, Params { key: "h".into(), pid: 0x0B1F, connection: Connection::Usb, short_ok: false }, sink);
+    let dev = wait_ready(&rx);
+    {
+        let d = backend::lock(&dev);
+        assert_eq!(d.state().name, "G733 Gaming Headset");
+        assert!(!d.state().online);
+        assert!(d.state().equalizer.is_none());
+    }
+    node.with_device(0xFF, |d| d.online = true);
+    node.battery_event(0xFF, 80, false);
+    let dev = wait_ready(&rx);
+    {
+        let d = backend::lock(&dev);
+        let s = d.state();
+        assert!(s.online);
+        assert!(s.battery.is_some());
+        assert_eq!(s.sidetone.as_ref().unwrap().value, 35);
+        assert_eq!(s.equalizer.as_ref().unwrap().gains, vec![0, 2, 0, -1, 3]);
+        assert_eq!(s.zones.len(), 2);
+        assert!(s.auto_off.is_some());
+    }
+    be.stop();
+}
+
+#[test]
 fn logitech_headset_with_locked_equalizer_gets_a_software_one() {
     let mut sim = SimLogi::headset("G733 Gaming Headset", 0x78);
     sim.eq_locked = true;

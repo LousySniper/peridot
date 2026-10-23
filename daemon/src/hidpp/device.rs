@@ -72,6 +72,10 @@ pub struct LogitechDevice {
     /// Some firmware (e.g. G733 with EQUALIZER v0/v1) reports its EQ but rejects every write;
     /// Peridot then applies the EQ in software (see `softeq`).
     eq_writable: Option<bool>,
+    /// The last full read was cut short because the device didn't answer
+    /// (e.g. a headset that was off while its dongle answered); read again
+    /// once it does.
+    pub incomplete: bool,
     /// Known only from the receiver's pairing table; never probed yet.
     pub placeholder: bool,
 }
@@ -376,6 +380,7 @@ impl LogitechDevice {
             shift_restore: None,
             host_mode_forced: false,
             eq_writable: None,
+            incomplete: false,
             placeholder: false,
         };
         dev.state.name = dev.read_name().unwrap_or_else(|_| "Logitech device".into());
@@ -432,6 +437,7 @@ impl LogitechDevice {
             shift_restore: None,
             host_mode_forced: false,
             eq_writable: None,
+            incomplete: false,
             placeholder: true,
         }
     }
@@ -505,29 +511,29 @@ impl LogitechDevice {
     /// Read everything we can show. Individual failures just hide a section.
     pub fn read_all(&mut self) {
         let headset = self.state.kind == Kind::Headset;
+        self.incomplete = false;
         match self.read_battery(headset) {
             Ok(b) => self.state.battery = b,
             Err(e) if e.is_offline() => {
                 self.state.online = false;
+                self.incomplete = true;
                 return;
             }
             Err(e) => crate::debug!("{}: battery: {}", self.state.name, e),
         }
         self.read_onboard_mode();
-        if let Err(e) = self.read_dpi() {
-            crate::debug!("{}: dpi: {}", self.state.name, e);
-        }
-        if let Err(e) = self.read_rate() {
-            crate::debug!("{}: report rate: {}", self.state.name, e);
-        }
-        if let Err(e) = self.read_leds() {
-            crate::debug!("{}: lighting: {}", self.state.name, e);
-        }
-        if let Err(e) = self.read_controls() {
-            crate::debug!("{}: controls: {}", self.state.name, e);
-        }
-        if let Err(e) = self.read_audio() {
-            crate::debug!("{}: audio: {}", self.state.name, e);
+        let sections: [(&str, fn(&mut Self) -> Result<(), HErr>); 5] = [
+            ("dpi", Self::read_dpi),
+            ("report rate", Self::read_rate),
+            ("lighting", Self::read_leds),
+            ("controls", Self::read_controls),
+            ("audio", Self::read_audio),
+        ];
+        for (what, read) in sections {
+            if let Err(e) = read(self) {
+                crate::debug!("{}: {}: {}", self.state.name, what, e);
+                self.incomplete |= e.is_offline();
+            }
         }
         self.state.notes.clear();
         if self.state.onboard_mode.as_deref() == Some("onboard") && self.state.dpi.is_some() {
@@ -1065,6 +1071,11 @@ impl model::Device for LogitechDevice {
     fn refresh(&mut self) -> model::Result<()> {
         if self.placeholder {
             return Err(model::Error::Offline);
+        }
+        if self.incomplete {
+            // Answering again: read what was missed while it wasn't.
+            self.read_all();
+            return if self.state.online { Ok(()) } else { Err(model::Error::Offline) };
         }
         let headset = self.state.kind == Kind::Headset;
         let r = self.read_battery(headset);

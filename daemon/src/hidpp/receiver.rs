@@ -315,9 +315,15 @@ impl Worker {
             }
             let (events, changed, came_back, id) = {
                 let mut d = dev.lock().unwrap_or_else(|p| p.into_inner());
-                let came_back = !d.state.online && m.sub < 0x80 && m.swid() == 0;
+                let mut came_back = !d.state.online && m.sub < 0x80 && m.swid() == 0;
                 if came_back {
                     d.set_online(true);
+                    if d.incomplete {
+                        // It wasn't answering when probed (a headset that was off
+                        // while its dongle answered): read the rest now.
+                        d.read_all();
+                        came_back = d.state.online;
+                    }
                 }
                 let (events, changed) = d.handle_notification(&m);
                 (events, changed, came_back, d.state.id.clone())

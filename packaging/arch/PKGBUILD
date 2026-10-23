@@ -1,6 +1,6 @@
 # Maintainer: LousySniper <https://github.com/LousySniper>
 pkgname=peridot
-pkgver=0.2.0
+pkgver=1.0.0
 pkgrel=1
 pkgdesc='Settings for Logitech and Razer mice and headsets: DPI, polling rate, lighting, buttons, sound and battery'
 arch=('x86_64' 'aarch64')

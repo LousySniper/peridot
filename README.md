@@ -5,9 +5,7 @@ battery in the tray, DPI, polling rate, lighting, button remapping, and headset
 sidetone, equalizer and virtual surround. It replaces Solaar, OpenRazer,
 Piper and HeadsetControl with one service and one window.
 
-![Sound settings for a Logitech G733](docs/screenshots/sound.png)
-
-![DPI stages on a Razer DeathAdder V3 Pro](docs/screenshots/sensitivity.png)
+![Peridot showing the sound settings of a Logitech G733](docs/screenshots/peridot.png)
 
 ## Supported devices
 
@@ -51,19 +49,15 @@ Devices match by id or any part of the name; `peridotctl help` lists the rest.
 ## Notes
 
 - Tested on a Razer DeathAdder V3 Pro, Razer BlackShark V3 X and Logitech G733.
-  Other devices follow the projects below and are checked against simulators;
-  if one misbehaves, please [open an issue](https://github.com/LousySniper/peridot/issues).
+  Other devices follow Solaar, OpenRazer and HeadsetControl; if one
+  misbehaves, please [open an issue](https://github.com/LousySniper/peridot/issues).
 - Razer BlackShark V3 headsets need Linux 7.3 or newer; if the app says the
   headset isn't answering, unplug and replug its dongle once.
 
-## Development
+## Reporting a problem
 
-```sh
-cd daemon && cargo test     # protocol tests against device simulators
-PERIDOT_LOG=trace peridotd  # log every report
-```
-
-The D-Bus API is described in [docs/dbus-api.md](docs/dbus-api.md).
+Run `PERIDOT_LOG=trace peridotd` (after `systemctl --user stop peridotd`),
+reproduce it, and attach the output to an issue.
 
 ## License
 

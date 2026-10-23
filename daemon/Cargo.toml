@@ -1,6 +1,6 @@
 [package]
 name = "peridot"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 description = "All-in-one manager for Logitech and Razer mice and headsets (daemon + CLI)"
@@ -9,6 +9,10 @@ rust-version = "1.75"
 # Deliberately no third-party dependencies: the daemon talks to hidraw, uinput,
 # netlink and D-Bus directly through the standard library, so it builds offline
 # and has a tiny attack surface.
+
+[features]
+# Device simulators and the protocol tests that use them (development only).
+sim = []
 
 [lib]
 path = "src/lib.rs"

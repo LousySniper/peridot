@@ -26,7 +26,9 @@ pub mod razer;
 pub mod remap;
 pub mod service;
 pub mod softeq;
-/// Byte-level device simulators used by the test-suite.
+/// Byte-level device simulators for the protocol tests (development only:
+/// `cargo test --features sim`).
+#[cfg(feature = "sim")]
 #[doc(hidden)]
 pub mod sim;
 pub mod sys;

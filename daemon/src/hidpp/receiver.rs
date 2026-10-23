@@ -145,17 +145,26 @@ impl Worker {
     }
 
     fn refresh_all(&self) {
-        for dev in self.slots.values() {
-            let online = {
+        for (idx, dev) in &self.slots {
+            let (online, incomplete) = {
                 let d = dev.lock().unwrap_or_else(|p| p.into_inner());
-                d.state.online
+                (d.state.online, d.incomplete)
             };
-            if online {
-                {
+            // A directly connected headset that was off answers instantly, so
+            // check it too in case its "switched on" notice was missed.
+            let retry = !online && incomplete && *idx == DEV_DIRECT;
+            if online || retry {
+                let back = {
                     let mut d = dev.lock().unwrap_or_else(|p| p.into_inner());
                     let _ = d.refresh();
+                    !online && d.state.online
+                };
+                if back {
+                    let dyn_handle: DeviceHandle = dev.clone();
+                    (self.sink)(BackendEvent::Ready(dyn_handle));
+                } else {
+                    self.emit_changed(dev);
                 }
-                self.emit_changed(dev);
             }
         }
     }

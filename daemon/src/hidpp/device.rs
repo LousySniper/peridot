@@ -554,7 +554,7 @@ impl LogitechDevice {
         self.incomplete = false;
         match self.read_battery(headset) {
             Ok(b) => self.state.battery = b,
-            Err(e) if e.is_offline() => {
+            Err(e) if self.unreachable(&e) => {
                 self.state.online = false;
                 self.incomplete = true;
                 return;
@@ -572,7 +572,7 @@ impl LogitechDevice {
         for (what, read) in sections {
             if let Err(e) = read(self) {
                 crate::debug!("{}: {}: {}", self.state.name, what, e);
-                self.incomplete |= e.is_offline();
+                self.incomplete |= self.unreachable(&e);
             }
         }
         self.state.notes.clear();
@@ -859,9 +859,16 @@ impl LogitechDevice {
         Ok(())
     }
 
+    /// The device isn't answering: offline or out of range. A dongle with the
+    /// headset built in (the G733's) answers for it while it's switched off,
+    /// with error 0x05 to every request that needs the headset.
+    fn unreachable(&self, e: &HErr) -> bool {
+        e.is_offline() || (self.index == super::DEV_DIRECT && *e == HErr::V20(0x05))
+    }
+
     fn mark_offline_on<T>(&mut self, r: Result<T, HErr>) -> model::Result<T> {
         match r {
-            Err(e) if e.is_offline() => {
+            Err(e) if self.unreachable(&e) => {
                 self.state.online = false;
                 Err(model::Error::Offline)
             }

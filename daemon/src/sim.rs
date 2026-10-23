@@ -38,7 +38,8 @@ pub struct SimLogi {
     /// Reject every equalizer write, like the G733's firmware.
     pub eq_locked: bool,
     /// Directly connected through a dongle that answers for the device's
-    /// identity while the device itself is off (the G733 does this).
+    /// identity while the device itself is off, and fails the rest with
+    /// error 0x05 (the G733 does this).
     pub dongle: bool,
     /// An old device that only speaks HID++ 1.0 (battery in registers).
     pub hidpp10: bool,
@@ -479,8 +480,15 @@ impl Transport for SimHidppNode {
                 address: m.sub,
                 params: vec![m.address, if self.receiver { 0x08 } else { 0x01 }],
             },
-            Some(d) if !d.online && d.dongle && is_identity(d.features.get(m.sub as usize).copied()) => {
-                match d.respond(m.sub, m.function(), &m.params) {
+            Some(d) if !d.online && d.dongle => {
+                // Like the G733's dongle: it answers for the headset's identity
+                // and fails everything else with error 0x05.
+                let result = if is_identity(d.features.get(m.sub as usize).copied()) {
+                    d.respond(m.sub, m.function(), &m.params)
+                } else {
+                    Err(0x05)
+                };
+                match result {
                     Ok(params) => Message { report: reply_report(params.len()).max(m.report), device: m.device, sub: m.sub, address: m.address, params },
                     Err(code) => Message { report: REPORT_LONG, device: m.device, sub: 0xFF, address: m.sub, params: vec![m.address, code] },
                 }

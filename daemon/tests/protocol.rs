@@ -279,6 +279,29 @@ fn logitech_headset_with_locked_equalizer_gets_a_software_one() {
 }
 
 #[test]
+fn logitech_hidpp10_device_gets_its_battery() {
+    let mut old = SimLogi::office_mouse("M705", 0x0a0b0c0d);
+    old.hidpp10 = true;
+    old.battery = 70;
+    let node = SimHidppNode::new("receiver", true, vec![(1, old)]);
+    let (sink, rx) = sink();
+    let t: Arc<dyn Transport> = node.clone();
+    let be = receiver::start(t, Params { key: "r".into(), pid: 0xC52B, connection: Connection::Receiver, short_ok: true }, sink);
+    let dev = wait_ready(&rx);
+    {
+        let d = backend::lock(&dev);
+        let s = d.state();
+        assert_eq!(s.name, "M705");
+        assert_eq!(s.kind.as_str(), "mouse");
+        assert_eq!(s.protocol.as_deref(), Some("HID++ 1.0"));
+        assert_eq!(s.battery.as_ref().unwrap().percent, Some(70));
+        assert!(s.dpi.is_none() && s.zones.is_empty());
+    }
+    assert!(backend::lock(&dev).apply("dpi", &Json::Num(800.0)).is_err());
+    be.stop();
+}
+
+#[test]
 fn logitech_g522_settings() {
     let sim = SimCenturion::new(true);
     let t: Arc<dyn Transport> = sim.clone();

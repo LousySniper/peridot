@@ -40,6 +40,8 @@ pub struct SimLogi {
     /// Directly connected through a dongle that answers for the device's
     /// identity while the device itself is off (the G733 does this).
     pub dongle: bool,
+    /// An old device that only speaks HID++ 1.0 (battery in registers).
+    pub hidpp10: bool,
     pub auto_off: u8,
     pub log: Vec<String>,
 }
@@ -78,6 +80,7 @@ impl SimLogi {
             eq: vec![],
             eq_locked: false,
             dongle: false,
+            hidpp10: false,
             auto_off: 0,
             log: vec![],
         }
@@ -134,6 +137,7 @@ impl SimLogi {
             eq: vec![0, 2, 0, -1, 3],
             eq_locked: false,
             dongle: false,
+            hidpp10: false,
             auto_off: 30,
             log: vec![],
         }
@@ -433,6 +437,11 @@ impl Transport for SimHidppNode {
                                 r.params = vec![sub, n as u8];
                                 r.params.extend_from_slice(&name[..n]);
                             }
+                        } else if m.address == 0xB5 && (0x20..0x26).contains(&sub) {
+                            // Pairing info; byte 7 is the device kind (2 = mouse).
+                            if let Some(d) = inner.devices.get(&(sub - 0x20 + 1)) {
+                                r.params = vec![sub, 0, 0, 0x10, 0x1b, 0, 0, if d.hidpp10 { 2 } else { 0 }];
+                            }
                         } else if m.address == 0xB5 && (0x30..0x36).contains(&sub) {
                             if let Some(d) = inner.devices.get(&(sub - 0x30 + 1)) {
                                 r.params = vec![sub];
@@ -476,6 +485,11 @@ impl Transport for SimHidppNode {
                     Err(code) => Message { report: REPORT_LONG, device: m.device, sub: 0xFF, address: m.sub, params: vec![m.address, code] },
                 }
             }
+            Some(d) if d.online && d.hidpp10 => match (m.sub, m.address) {
+                // Register 0x0D: percent, ?, 0x30 = discharging
+                (0x81, 0x0D) => Message { report: REPORT_SHORT, device: m.device, sub: 0x81, address: 0x0D, params: vec![d.battery, 0, 0x30] },
+                _ => Message { report: REPORT_SHORT, device: m.device, sub: 0x8F, address: m.sub, params: vec![m.address, 0x01] },
+            },
             Some(d) if !d.online => {
                 if self.receiver {
                     Message { report: REPORT_SHORT, device: m.device, sub: 0x8F, address: m.sub, params: vec![m.address, 0x09] }

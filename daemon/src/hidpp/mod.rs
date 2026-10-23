@@ -42,6 +42,13 @@ pub struct Message {
 }
 
 impl Message {
+    /// A HID++ 1.0 notification's data: the byte in the address slot, then the params.
+    pub fn params_with_address(&self) -> Vec<u8> {
+        let mut v = vec![self.address];
+        v.extend_from_slice(&self.params);
+        v
+    }
+
     pub fn encode(&self) -> Vec<u8> {
         let len = match self.report {
             REPORT_SHORT => SHORT_LEN,

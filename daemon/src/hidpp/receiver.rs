@@ -7,7 +7,7 @@ use super::features::protocol_version;
 use super::{is_receiver, receiver_name, Channel, Message, DEV_DIRECT, NOTIF_DEVICE_CONNECTED, NOTIF_DEVICE_DISCONNECTED};
 use crate::backend::{Backend, BackendEvent, DeviceHandle, Sink};
 use crate::hid::Transport;
-use crate::model::{Connection, Device};
+use crate::model::{self, Connection, Device, Kind};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
@@ -211,6 +211,41 @@ impl Worker {
         (self.sink)(BackendEvent::Ready(dyn_handle));
     }
 
+    /// An older (HID++ 1.0) device paired to the receiver: battery only.
+    fn add_legacy(&mut self, idx: u8) {
+        let (name, serial) = self.pairing_info(idx);
+        let mut dev = LogitechDevice::placeholder(
+            self.ch.clone(),
+            idx,
+            name.unwrap_or_else(|| "Logitech device".into()),
+            self.model_for(idx),
+            Some(receiver_name(self.params.pid).to_string()),
+            serial,
+        );
+        // Unifying pairing info byte 7: 1 keyboard, 2 mouse, 3 numpad, 8 trackball, 9 touchpad.
+        if self.params.pid != 0xC548 {
+            if let Ok(r) = self.ch.read_register(DEV_DIRECT, 0xB5, true, &[0x20 + idx - 1]) {
+                dev.state.kind = match r.get(7).map(|b| b & 0x0F) {
+                    Some(1) | Some(3) => Kind::Keyboard,
+                    Some(2) | Some(8) | Some(9) => Kind::Mouse,
+                    _ => Kind::Other,
+                };
+            }
+        }
+        dev.placeholder = false;
+        dev.legacy = true;
+        dev.state.protocol = Some("HID++ 1.0".into());
+        dev.state.online = true;
+        if let Err(e) = model::Device::refresh(&mut dev) {
+            crate::debug!("{}: {}: battery: {}", self.ch.describe(), dev.state.name, e);
+        }
+        crate::info!("{}: {} ready (HID++ 1.0, battery only)", self.ch.describe(), dev.state.name);
+        let handle = Arc::new(Mutex::new(dev));
+        self.slots.insert(idx, handle.clone());
+        let dyn_handle: DeviceHandle = handle;
+        (self.sink)(BackendEvent::Ready(dyn_handle));
+    }
+
     fn try_probe(&mut self, idx: u8, timeout: Duration) {
         let version = match protocol_version(&self.ch, idx, timeout) {
             Ok(v) => v,
@@ -220,7 +255,9 @@ impl Worker {
             }
         };
         if version.0 < 2 {
-            if !self.unsupported.contains(&idx) {
+            if self.receiver() && (1..=6).contains(&idx) {
+                self.add_legacy(idx);
+            } else if !self.unsupported.contains(&idx) {
                 crate::info!("{}: device {} speaks HID++ 1.0 only; not supported", self.ch.describe(), idx);
                 self.unsupported.push(idx);
             }

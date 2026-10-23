@@ -78,6 +78,8 @@ pub struct LogitechDevice {
     pub incomplete: bool,
     /// Known only from the receiver's pairing table; never probed yet.
     pub placeholder: bool,
+    /// HID++ 1.0 device: only the battery, read from registers.
+    pub legacy: bool,
 }
 
 pub fn control_name(cid: u16) -> String {
@@ -312,6 +314,42 @@ pub fn decode_battery_status(r: &[u8]) -> Battery {
     Battery { percent, charge, voltage_mv: None, estimated: false }
 }
 
+/// HID++ 1.0 register 0x0D: `percent, ?, status` (status 0x30 discharging,
+/// 0x50 charging, 0x90 full), as Solaar reads it.
+pub fn decode_battery_charge_register(r: &[u8]) -> Option<Battery> {
+    let percent = *r.first()?;
+    let charge = match r.get(2).map(|b| b & 0xF0) {
+        Some(0x50) => Charge::Charging,
+        Some(0x90) => Charge::Full,
+        _ => Charge::Discharging,
+    };
+    Some(Battery { percent: Some(percent.min(100)), charge, voltage_mv: None, estimated: false })
+}
+
+/// HID++ 1.0 register 0x07: a coarse level (7 full, 5 good, 3 low, 1
+/// critical) and a charging byte, mapped to Solaar's approximate percentages.
+pub fn decode_battery_status_register(r: &[u8]) -> Option<Battery> {
+    let (level, charging) = (*r.first()?, r.get(1).copied().unwrap_or(0));
+    let charge = if charging == 0 {
+        Charge::Discharging
+    } else if charging & 0x21 == 0x21 {
+        Charge::Charging
+    } else if charging & 0x22 == 0x22 {
+        Charge::Full
+    } else {
+        Charge::Discharging
+    };
+    let percent = match level {
+        7 => Some(90),
+        5 => Some(50),
+        3 => Some(20),
+        1 => Some(5),
+        0 if charging & 0x03 != 0 => None, // a charging notice without a level
+        _ => Some(0),
+    };
+    Some(Battery { percent, charge, voltage_mv: None, estimated: true })
+}
+
 pub fn decode_battery_voltage(r: &[u8], headset: bool) -> Battery {
     let mv = be16(r, 0);
     let flags = r.get(2).copied().unwrap_or(0);
@@ -382,6 +420,7 @@ impl LogitechDevice {
             eq_writable: None,
             incomplete: false,
             placeholder: false,
+            legacy: false,
         };
         dev.state.name = dev.read_name().unwrap_or_else(|_| "Logitech device".into());
         let (fw, unit) = dev.read_firmware().unwrap_or((None, None));
@@ -439,6 +478,7 @@ impl LogitechDevice {
             eq_writable: None,
             incomplete: false,
             placeholder: true,
+            legacy: false,
         }
     }
 
@@ -544,6 +584,14 @@ impl LogitechDevice {
     }
 
     fn read_battery(&self, headset: bool) -> Result<Option<Battery>, HErr> {
+        if self.legacy {
+            // Register 0x0D has a percentage; older devices only 0x07's coarse level.
+            return match self.ch.read_register(self.index, 0x0D, false, &[]) {
+                Ok(r) => Ok(decode_battery_charge_register(&r)),
+                Err(e) if e.is_offline() => Err(e),
+                Err(_) => Ok(decode_battery_status_register(&self.ch.read_register(self.index, 0x07, false, &[])?)),
+            };
+        }
         if self.features.has(f::UNIFIED_BATTERY) {
             return Ok(Some(decode_unified_battery(&self.req(f::UNIFIED_BATTERY, 1, &[])?)));
         }
@@ -999,6 +1047,19 @@ impl LogitechDevice {
     /// Handle a device-initiated report addressed to this device. Returns the
     /// button transitions it produced (if any) and whether state changed.
     pub fn handle_notification(&mut self, msg: &Message) -> (Vec<ButtonEvent>, bool) {
+        if self.legacy {
+            // Battery notifications carry the register's contents.
+            let b = match msg.sub {
+                0x0D => decode_battery_charge_register(&msg.params_with_address()),
+                0x07 => decode_battery_status_register(&msg.params_with_address()),
+                _ => return (vec![], false),
+            };
+            let changed = b.is_some();
+            if changed {
+                self.state.battery = b;
+            }
+            return (vec![], changed);
+        }
         if msg.swid() != 0 {
             return (vec![], false);
         }
@@ -1090,6 +1151,9 @@ impl model::Device for LogitechDevice {
             // Nothing is known about the device yet; the manager keeps the
             // setting and replays it once the device wakes up and is probed.
             return Err(model::Error::Offline);
+        }
+        if self.legacy {
+            return Err(model::Error::NotSupported(key.into()));
         }
         match key {
             "dpi" => {

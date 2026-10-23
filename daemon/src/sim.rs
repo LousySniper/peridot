@@ -526,6 +526,9 @@ impl Transport for SimHidppNode {
 
 // ---------------------------------------------------------------- Razer ----
 
+/// Key under which [`SimRazerState::effects`] keeps standard-matrix effects.
+pub const STD_MATRIX: u8 = 0xFE;
+
 #[derive(Clone, Debug)]
 pub struct SimRazerState {
     pub pid: u16,
@@ -654,6 +657,11 @@ impl SimRazer {
             (0x0F, 0x02) | (0x03, 0x0D) | (0x03, 0x00) | (0x03, 0x01) | (0x03, 0x02) => {
                 s.effects.insert(a[1], a[..12].to_vec());
                 s.log.push(format!("led{:02x}=fx{:02x}", a[1], a[2]));
+            }
+            (0x03, 0x0A) => {
+                // Standard matrix effects have no LED argument.
+                s.effects.insert(STD_MATRIX, a[..8].to_vec());
+                s.log.push(format!("matrix=fx{:02x}", a[0]));
             }
             _ => r.status = razer::STATUS_UNSUPPORTED,
         }

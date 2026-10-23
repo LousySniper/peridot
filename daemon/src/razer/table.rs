@@ -23,6 +23,15 @@ pub const FX_SPECTRUM: u8 = 8;
 pub const FX_WAVE: u8 = 16;
 pub const FX_REACTIVE: u8 = 32;
 
+/// Which OpenRazer driver the product belongs to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Class {
+    Mouse,
+    Keyboard,
+    /// Mouse mats, docks, stands, charging pads...
+    Accessory,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LedProto {
     None,
@@ -32,6 +41,8 @@ pub enum LedProto {
     MouseExtended,
     /// Class 0x0F extended matrix effects (most current devices).
     Extended,
+    /// Class 0x03 id 0x0A matrix effects (older keyboards and mats).
+    StandardMatrix,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -46,6 +57,7 @@ pub struct ZoneDef {
 #[derive(Clone, Copy, Debug)]
 pub struct Model {
     pub pid: u16,
+    pub class: Class,
     pub name: &'static str,
     pub tid: u8,
     pub led_tid: u8,

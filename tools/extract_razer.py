@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Extract a per-product capability table from the OpenRazer mouse driver source.
+"""Extract a per-product capability table from the OpenRazer driver sources
+(mice, keyboards and accessories such as mouse mats and docks).
 
-Reads C source as text only. Output: JSON {pid: {...}} describing which sysfs
-attributes the driver creates for each product and, for each command handler,
-which transaction id / builder variant it uses.
+Reads C source as text only. Output: JSON {pid: {...}} describing, for each
+product, its class, which sysfs attributes the driver creates and, for each
+command handler, which transaction id / builder variant / LED it uses.
 """
 import json
 import re
@@ -12,13 +13,21 @@ import sys
 src_dir = sys.argv[1]
 out_path = sys.argv[2]
 
-hdr = open(f"{src_dir}/driver/razermouse_driver.h").read()
-c = open(f"{src_dir}/driver/razermouse_driver.c").read()
-lines = c.split("\n")
+# (class, driver file stem, probe function, function choosing the USB interface)
+DRIVERS = [
+    ("mouse", "razermouse_driver", "razer_mouse_probe", "razer_get_report"),
+    ("keyboard", "razerkbd_driver", "razer_kbd_probe", "razer_get_report_params"),
+    ("accessory", "razeraccessory_driver", "razer_accessory_probe", "razer_get_report"),
+]
+LED_RE = re.compile(r"razer_chroma_\w+\(\s*(?:VARSTORE|NOSTORE|razer_get_active_varstore\(device\))\s*,\s*(\w+_LED)")
+lines = []
 
-pid_of = {}
-for m in re.finditer(r"#define\s+(USB_DEVICE_ID_RAZER_\w+)\s+0x([0-9A-Fa-f]+)", hdr):
-    pid_of[m.group(1)] = int(m.group(2), 16)
+
+def load(stem):
+    global lines
+    lines = open(f"{src_dir}/driver/{stem}.c").read().split("\n")
+    hdr = open(f"{src_dir}/driver/{stem}.h").read()
+    return {m.group(1): int(m.group(2), 16) for m in re.finditer(r"#define\s+(USB_DEVICE_ID_RAZER_\w+)\s+0x([0-9A-Fa-f]+)", hdr)}
 
 
 def func_bodies():
@@ -51,7 +60,7 @@ def parse_switches(start, end):
     results = []
     i = start
     while i <= end:
-        if re.search(r"switch\s*\(\s*((dev|device)->usb_pid|usb_dev->descriptor\.idProduct)\s*\)", lines[i]):
+        if re.search(r"switch\s*\(\s*((dev|device)->usb_pid|(\w+->)*usb_dev->descriptor\.idProduct)\s*\)", lines[i]):
             depth = 0
             sw_depth = None
             active = []
@@ -102,68 +111,84 @@ def parse_switches(start, end):
     return results
 
 
-handlers = {}
-probe = None
-for name, s, e in func_bodies():
-    if name == "razer_mouse_probe":
-        probe = (s, e)
-    if name.startswith("razer_attr_") or name in ("razer_get_report",):
-        handlers[name] = parse_switches(s, e)
-
-devices = {}
-for sym, pid in pid_of.items():
-    devices[sym] = {"pid": pid, "attrs": set(), "handlers": {}}
-
-# attributes created in probe
-for seg in parse_switches(*probe):
-    for label, stmts in seg.items():
-        if label not in devices:
-            continue
-        for st in stmts:
-            m = re.search(r"dev_attr_(\w+)", st)
-            if m:
-                devices[label]["attrs"].add(m.group(1))
-
-# per-handler details
-for hname, switches in handlers.items():
-    for si, seg in enumerate(switches):
-        for label, stmts in seg.items():
-            if label not in devices and label != "default":
-                continue
-            joined = " ".join(stmts)
-            tids = re.findall(r"transaction_id\.id\s*=\s*(0x[0-9A-Fa-f]+)", joined)
-            calls = sorted(set(re.findall(r"\b(razer_chroma_\w+|razer_get_usb_response|\w+_set_poll_rate|\w+_effect_\w+)\s*\(", joined)))
-            waits = re.findall(r"(RAZER_\w+_WAIT_US)", joined)
-            idx = re.findall(r"index\s*=\s*(0x[0-9A-Fa-f]+)", joined)
-            entry = {"tids": tids, "calls": calls, "waits": waits, "index": idx}
-            targets = [label] if label != "default" else ["default"]
-            for t in targets:
-                if t == "default":
-                    devices.setdefault("__default__", {"pid": -1, "attrs": set(), "handlers": {}})
-                    devices["__default__"]["handlers"].setdefault(hname, []).append(entry)
-                else:
-                    devices[t]["handlers"].setdefault(hname, []).append(entry)
-
-# names from read_device_type
-names = {}
-for seg in handlers.get("razer_attr_read_device_type", []):
-    for label, stmts in seg.items():
-        for st in stmts:
-            m = re.search(r'device_type\s*=\s*"([^"\\]+)', st)
-            if m:
-                names[label] = m.group(1)
-
 out = {}
-for sym, d in devices.items():
-    if sym == "__default__":
-        continue
-    if not d["attrs"]:
-        continue
-    out[f"{d['pid']:04x}"] = {
-        "symbol": sym,
-        "name": names.get(sym, sym),
-        "attrs": sorted(d["attrs"]),
-        "handlers": d["handlers"],
-    }
+for cls, stem, probe_fn, report_fn in DRIVERS:
+    pid_of = load(stem)
+    handlers = {}
+    probe = None
+    for name, s, e in func_bodies():
+        if name == probe_fn:
+            probe = (s, e)
+        if name.startswith("razer_attr_") or name == report_fn:
+            handlers[name] = parse_switches(s, e)
+
+    devices = {}
+    for sym, pid in pid_of.items():
+        devices[sym] = {"pid": pid, "attrs": set(), "handlers": {}}
+
+    # attributes created in probe, per product...
+    in_switch = set()
+    for seg in parse_switches(*probe):
+        for label, stmts in seg.items():
+            for st in stmts:
+                m = re.search(r"dev_attr_(\w+)", st)
+                if m:
+                    in_switch.add(m.group(1))
+                    if label in devices:
+                        devices[label]["attrs"].add(m.group(1))
+    # ...and for every product of the driver (outside the per-product switch)
+    common = set(re.findall(r"CREATE_DEVICE_FILE\([^;]*dev_attr_(\w+)", "\n".join(lines[probe[0]:probe[1] + 1]))) - in_switch
+    common -= {"version", "test", "device_type", "device_mode", "device_serial", "firmware_version", "kbd_layout"}
+    for d in devices.values():
+        if d["attrs"]:
+            d["attrs"] |= common
+
+    # per-handler details
+    for hname, switches in handlers.items():
+        for si, seg in enumerate(switches):
+            for label, stmts in seg.items():
+                if label not in devices and label != "default":
+                    continue
+                joined = " ".join(stmts)
+                tids = re.findall(r"transaction_id\.id\s*=\s*(0x[0-9A-Fa-f]+)", joined)
+                calls = sorted(set(re.findall(r"\b(razer_chroma_\w+|razer_get_usb_response|\w+_set_poll_rate|\w+_effect_\w+)\s*\(", joined)))
+                waits = re.findall(r"(RAZER_\w+_WAIT_US)", joined)
+                idx = re.findall(r"index\s*=\s*(0x[0-9A-Fa-f]+)", joined)
+                idx += re.findall(r"razer_get_usb_response\(\s*hdev\s*,\s*(0x[0-9A-Fa-f]+)", joined)
+                leds = sorted(set(LED_RE.findall(joined)))
+                entry = {"tids": tids, "calls": calls, "waits": waits, "index": idx, "leds": leds}
+                targets = [label] if label != "default" else ["default"]
+                for t in targets:
+                    if t == "default":
+                        devices.setdefault("__default__", {"pid": -1, "attrs": set(), "handlers": {}})
+                        devices["__default__"]["handlers"].setdefault(hname, []).append(entry)
+                    else:
+                        devices[t]["handlers"].setdefault(hname, []).append(entry)
+
+    # names from read_device_type
+    names = {}
+    for seg in handlers.get("razer_attr_read_device_type", []):
+        for label, stmts in seg.items():
+            for st in stmts:
+                m = re.search(r'device_type\s*=\s*"([^"\\]+)', st)
+                if m:
+                    names[label] = m.group(1)
+
+    for sym, d in devices.items():
+        if sym == "__default__":
+            continue
+        if not d["attrs"]:
+            continue
+        key = f"{d['pid']:04x}"
+        if key in out:
+            continue  # handled by an earlier driver
+        out[key] = {
+            "class": cls,
+            "symbol": sym,
+            "name": names.get(sym, sym),
+            "attrs": sorted(d["attrs"]),
+            "handlers": d["handlers"],
+        }
+
 json.dump(out, open(out_path, "w"), indent=1, sort_keys=True)
 print(len(out), "devices")

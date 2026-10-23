@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Generate src/razer/devices.rs from razer.json (driver facts) and the
-OpenRazer daemon's mouse.py (DPI limits, polling rates). Reads files as data."""
+"""Generate src/razer/devices.rs from razer.json (driver facts for mice,
+keyboards and accessories) and the OpenRazer daemon's mouse.py (DPI limits,
+polling rates). Reads files as data."""
 import ast
 import json
 import sys
@@ -54,7 +55,18 @@ WAITS = {
     "RAZER_NEW_MOUSE_RECEIVER_WAIT_US": 31000,
     "RAZER_ATHERIS_RECEIVER_WAIT_US": 400000,
     "RAZER_VIPER_MOUSE_RECEIVER_WAIT_US": 59900,
+    "RAZER_BLACKWIDOW_CHROMA_WAIT_US": 600,
+    "RAZER_BLACKWIDOW_V3_WIRELESS_WAIT_US": 4900,
+    "RAZER_DEATHSTALKER_V2_WIRELESS_WAIT_US": 4900,
+    "RAZER_FIREFLY_WAIT_US": 900,
+    "RAZER_ACCESSORY_WAIT_US": 600,
+    "RAZER_NEW_DEVICE_WAIT_US": 31000,
 }
+LED_IDS = {"ZERO_LED": 0x00, "SCROLL_WHEEL_LED": 0x01, "LOGO_LED": 0x04, "BACKLIGHT_LED": 0x05,
+           "RIGHT_SIDE_LED": 0x10, "LEFT_SIDE_LED": 0x11}
+# The interface a driver talks to when its per-product switch has no entry.
+DEFAULT_IFACE = {"mouse": 0, "keyboard": 1, "accessory": 0}
+CLASSES = {"mouse": "Mouse", "keyboard": "Keyboard", "accessory": "Accessory"}
 ZONES = [  # prefix, led id, zone id, label
     ("logo_", 0x04, "logo", "Logo"),
     ("scroll_", 0x01, "scroll", "Scroll wheel"),
@@ -128,6 +140,7 @@ for pid_hex, d in sorted(devs.items()):
             tids.append(t)
     tid = Counter(tids).most_common(1)[0][0] if tids else 0xFF
 
+    cls = d.get("class", "mouse")
     led = "None"
     led_entries = h(d, "razer_attr_write_matrix_effect_static_common")
     lc = calls(led_entries)
@@ -148,7 +161,28 @@ for pid_hex, d in sorted(devs.items()):
                     mask |= bit
             if mask:
                 zones.append((led_id, zid, label, mask, f"{prefix}led_brightness" in attrs))
-    if not zones:
+    if not zones and cls != "mouse":
+        # Keyboards and accessories: one lighting zone for the whole device,
+        # in whichever of the protocol generations its static handler uses.
+        st = h(d, "razer_attr_write_matrix_effect_static")
+        sc = calls(st)
+        leds = [l for e in st for l in e.get("leds", [])]
+        if "razer_chroma_extended_matrix_effect_static" in sc:
+            led = "Extended"
+        elif "razer_chroma_standard_matrix_effect_static" in sc:
+            led = "StandardMatrix"
+        elif "razer_chroma_standard_set_led_rgb" in sc:
+            led = "Standard"
+        led_id = LED_IDS.get(leds[0], 0x05) if leds else (0x05 if cls == "keyboard" else 0x00)
+        mask = 0
+        for eff, bit in EFFECTS:
+            if f"matrix_effect_{eff}" in attrs:
+                mask |= bit
+        if led != "None" and mask:
+            led_tid = first_tid(st) or led_tid
+            zid, label = ("backlight", "Keyboard") if cls == "keyboard" else ("all", "Lighting")
+            zones.append((led_id, zid, label, mask, "matrix_brightness" in attrs))
+    if not zones and cls == "mouse":
         # Whole-device effects only (no per-zone files)
         whole = calls(h(d, "razer_attr_write_matrix_effect_static"))
         if "razer_chroma_extended_matrix_effect_static" in whole:
@@ -163,8 +197,8 @@ for pid_hex, d in sorted(devs.items()):
     if not zones:
         led = "None"
 
-    gr = h(d, "razer_get_report")
-    iface = 0
+    gr = h(d, "razer_get_report") or h(d, "razer_get_report_params")
+    iface = DEFAULT_IFACE[cls]
     wait = 600
     if gr:
         if gr[0]["index"]:
@@ -181,7 +215,7 @@ for pid_hex, d in sorted(devs.items()):
     if wireless:
         flags.append("WIRELESS")
     rows.append(
-        dict(pid=pid, name=name, tid=tid, led_tid=led_tid or tid, iface=iface, wait=wait, dpi_max=dpi_max,
+        dict(pid=pid, cls=CLASSES[cls], name=name, tid=tid, led_tid=led_tid or tid, iface=iface, wait=wait, dpi_max=dpi_max,
              flags=flags, led=led, zones=zones, polls=polls, dual_tid=dual_tid or tid)
     )
 
@@ -199,7 +233,7 @@ with open(out_rs, "w") as f:
         )
         polls = ", ".join(str(p) for p in r["polls"])
         f.write(
-            f'    Model {{ pid: 0x{r["pid"]:04x}, name: "{r["name"]}", tid: 0x{r["tid"]:02x}, led_tid: 0x{r["led_tid"]:02x}, '
+            f'    Model {{ pid: 0x{r["pid"]:04x}, class: Class::{r["cls"]}, name: "{r["name"]}", tid: 0x{r["tid"]:02x}, led_tid: 0x{r["led_tid"]:02x}, '
             f'poll_dual_tid: 0x{r["dual_tid"]:02x}, iface: {r["iface"]}, wait_us: {r["wait"]}, dpi_max: {r["dpi_max"]}, '
             f'flags: {fl}, led: LedProto::{r["led"]}, zones: &[{zs}], poll_rates: &[{polls}] }},\n'
         )

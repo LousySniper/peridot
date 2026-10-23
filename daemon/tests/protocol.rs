@@ -6,7 +6,7 @@ use peridot::hidpp::receiver::{self, Params};
 use peridot::json::Json;
 use peridot::model::{Connection, Device};
 use peridot::razer;
-use peridot::sim::{SimHidppNode, SimLogi, SimRazer};
+use peridot::sim::{SimHidppNode, SimLogi, SimRazer, STD_MATRIX};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -275,6 +275,57 @@ fn logitech_headset_with_locked_equalizer_gets_a_software_one() {
     assert_eq!(backend::lock(&dev).state().equalizer.as_ref().unwrap().gains, vec![5, -3, 0, 0, 12]);
     node.with_device(0xFF, |d| assert_eq!(d.eq, vec![0, 2, 0, -1, 3]));
     be.stop();
+}
+
+fn razer_probe(pid: u16) -> (Arc<SimRazer>, razer::device::RazerDevice) {
+    let sim = SimRazer::new(pid, "XX0000000000123");
+    let model = razer::find_model(pid).unwrap();
+    let t: Arc<dyn Transport> = sim.clone();
+    let dev = razer::device::RazerDevice::probe(t, model, Connection::Usb).unwrap();
+    (sim, dev)
+}
+
+#[test]
+fn razer_keyboard_with_extended_lighting() {
+    let (sim, mut dev) = razer_probe(0x025e); // Cynosa V2
+    let s = dev.state().clone();
+    assert_eq!(s.name, "Razer Cynosa V2");
+    assert_eq!(s.kind.as_str(), "keyboard");
+    assert!(s.controls.is_empty() && s.notes.is_empty() && s.dpi.is_none());
+    assert_eq!(s.zones.len(), 1);
+    assert_eq!(s.zones[0].id, "backlight");
+    dev.apply("lighting", &j(r##"{"zone":"all","effect":"static","color":"#ff8000"}"##)).unwrap();
+    dev.apply("brightness", &j(r#"{"zone":"all","value":50}"#)).unwrap();
+    let st = sim.state.lock().unwrap();
+    let fx = &st.effects[&0x05];
+    assert_eq!((fx[1], fx[2]), (0x05, 0x01)); // backlight LED, static
+    assert_eq!(&fx[6..9], &[0xff, 0x80, 0x00]);
+    assert_eq!(st.brightness[&0x05], 128);
+}
+
+#[test]
+fn razer_keyboard_with_standard_matrix_lighting() {
+    let (sim, mut dev) = razer_probe(0x0203); // BlackWidow Chroma
+    assert_eq!(dev.state().kind.as_str(), "keyboard");
+    dev.apply("lighting", &j(r##"{"zone":"backlight","effect":"static","color":"#00ff00"}"##)).unwrap();
+    assert_eq!(&sim.state.lock().unwrap().effects[&STD_MATRIX][..4], &[0x06, 0x00, 0xff, 0x00]);
+    dev.apply("lighting", &j(r##"{"zone":"backlight","effect":"wave","direction":"left"}"##)).unwrap();
+    assert_eq!(&sim.state.lock().unwrap().effects[&STD_MATRIX][..2], &[0x01, 0x02]);
+    dev.apply("lighting", &j(r##"{"zone":"backlight","effect":"breathing","color":"#0000ff","color2":"#ff0000"}"##)).unwrap();
+    assert_eq!(&sim.state.lock().unwrap().effects[&STD_MATRIX][..8], &[0x03, 0x02, 0, 0, 0xff, 0xff, 0, 0]);
+    dev.apply("brightness", &j(r#"{"zone":"all","value":100}"#)).unwrap();
+    assert_eq!(sim.state.lock().unwrap().brightness[&0x05], 255);
+}
+
+#[test]
+fn razer_mouse_mat_lighting() {
+    let (sim, mut dev) = razer_probe(0x0c02); // Goliathus Extended
+    let s = dev.state().clone();
+    assert_eq!(s.kind.as_str(), "other");
+    assert!(s.controls.is_empty());
+    assert_eq!(s.zones[0].id, "all");
+    dev.apply("lighting", &j(r##"{"zone":"all","effect":"spectrum"}"##)).unwrap();
+    assert_eq!(sim.state.lock().unwrap().effects[&0x00][2], 0x03);
 }
 
 #[test]

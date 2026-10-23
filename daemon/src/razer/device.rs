@@ -1,6 +1,6 @@
 //! Razer mouse driver and its backend thread.
 
-use super::table::{self as t, LedProto, Model};
+use super::table::{self as t, Class, LedProto, Model};
 use super::*;
 use crate::actions::Action;
 use crate::backend::{Backend, BackendEvent, DeviceHandle, Sink};
@@ -60,7 +60,11 @@ impl RazerDevice {
             tid: model.tid,
             state: DeviceState {
                 vendor: "razer",
-                kind: Kind::Mouse,
+                kind: match model.class {
+                    Class::Mouse => Kind::Mouse,
+                    Class::Keyboard => Kind::Keyboard,
+                    Class::Accessory => Kind::Other,
+                },
                 connection,
                 online: true,
                 model: format!("1532:{:04x}", model.pid),
@@ -271,12 +275,15 @@ impl RazerDevice {
                 continue;
             }
             let r = match m.led {
-                LedProto::Standard => self.led_cmd(std_get_brightness(led)),
+                LedProto::Standard | LedProto::StandardMatrix => self.led_cmd(std_get_brightness(led)),
                 _ => self.led_cmd(ext_get_brightness(led)),
             };
             if let Ok(r) = r {
                 self.state.zones[i].brightness = Some(raw_to_pct(r.args[2]));
             }
+        }
+        if m.class != Class::Mouse {
+            return;
         }
         if self.state.controls.is_empty() {
             for (code, name, remappable) in REMAPPABLE_BUTTONS {
@@ -412,6 +419,23 @@ impl RazerDevice {
                     }
                     _ => return Err(model::Error::NotSupported(l.effect.as_str().into())),
                 },
+                LedProto::StandardMatrix => {
+                    let speed = 1 + (l.speed as u32 * 3 / 100) as u8;
+                    let mut rep = match l.effect {
+                        Effect::Off => std_matrix_effect(&[0x00]),
+                        Effect::Wave => std_matrix_effect(&[0x01, if l.direction == Direction::Left { 2 } else { 1 }]),
+                        Effect::Reactive => std_matrix_effect(&[0x02, speed, r, g, b]),
+                        Effect::Breathing => match l.color2 {
+                            Some(c2) => std_matrix_effect(&[0x03, 0x02, r, g, b, c2.0, c2.1, c2.2]),
+                            None => std_matrix_effect(&[0x03, 0x01, r, g, b, 0, 0, 0]),
+                        },
+                        Effect::Spectrum => std_matrix_effect(&[0x04]),
+                        Effect::Static => std_matrix_effect(&[0x06, r, g, b]),
+                        Effect::Ripple => return Err(model::Error::NotSupported("ripple".into())),
+                    };
+                    rep.tid = m.led_tid;
+                    self.led_cmd(rep)?;
+                }
                 LedProto::None => return Err(model::Error::NotSupported("lighting".into())),
             }
             self.state.zones[i].state = Some(l.clone());
@@ -436,7 +460,7 @@ impl RazerDevice {
             let led = m.zones[i].led;
             let raw = pct_to_raw(pct);
             match m.led {
-                LedProto::Standard => self.led_cmd(std_brightness(led, raw))?,
+                LedProto::Standard | LedProto::StandardMatrix => self.led_cmd(std_brightness(led, raw))?,
                 _ => self.led_cmd(ext_brightness(led, raw))?,
             };
             self.state.zones[i].brightness = Some(pct.min(100));

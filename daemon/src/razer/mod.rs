@@ -214,6 +214,11 @@ pub fn std_led_effect(led: u8, effect: u8) -> Report {
 pub fn std_brightness(led: u8, value: u8) -> Report {
     Report::new(0x03, 0x03, 0x03).with_args(&[VARSTORE, led, value])
 }
+/// Older keyboards and mats: class 0x03 id 0x0A, the effect id first.
+pub fn std_matrix_effect(args: &[u8]) -> Report {
+    Report::new(0x03, 0x0A, args.len() as u8).with_args(args)
+}
+
 pub fn std_get_brightness(led: u8) -> Report {
     Report::new(0x03, 0x83, 0x03).with_args(&[VARSTORE, led])
 }

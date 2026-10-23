@@ -240,6 +240,19 @@ impl Manager {
                     self.backend_nodes.insert(key, info);
                     return;
                 }
+                if let Some(model) = razer::kraken::find_model(info.pid) {
+                    if info.interface != Some(razer::kraken::INTERFACE) {
+                        return;
+                    }
+                    let t: Arc<dyn Transport> = match HidRaw::open(&info.path) {
+                        Ok(t) => Arc::new(t),
+                        Err(e) => return self.open_failed(&info, e),
+                    };
+                    let be = razer::kraken::start(t, model, key.clone(), self.sink());
+                    self.backends.insert(key.clone(), Box::new(be));
+                    self.backend_nodes.insert(key, info);
+                    return;
+                }
                 let Some(model) = razer::find_model(info.pid) else {
                     crate::debug!("{}: unknown Razer product {:04x}", key, info.pid);
                     self.warn_once(format!(

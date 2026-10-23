@@ -8,6 +8,7 @@ pub mod blackshark;
 pub mod blackshark_x;
 pub mod device;
 pub mod devices;
+pub mod kraken;
 pub mod table;
 
 pub const REPORT_LEN: usize = 90;

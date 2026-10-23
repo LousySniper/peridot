@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - name: Install build dependencies
+        run: pacman -Syu --noconfirm --needed base-devel git rust cmake ninja qt6-base qt6-declarative qt6-svg
+      - uses: actions/checkout@v4
+      - name: Test the daemon
+        run: cd daemon && cargo test --locked
+      - name: Build the daemon
+        run: cd daemon && cargo build --release --locked
+      - name: Build the app
+        run: |
+          cmake -S app -B build/app -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/app

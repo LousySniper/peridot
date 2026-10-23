@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Peridot tray
+Comment=Battery levels of your mice and headsets in the system tray
+Exec=peridot --minimized
+Icon=io.github.peridot
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2

@@ -1,0 +1,3 @@
+daemon/target/
+build/
+*.json.tmp

@@ -1,0 +1,22 @@
+# Peridot: give the logged-in user access to the devices it manages.
+# "uaccess" grants access only to the user of the active local seat, the same
+# mechanism Solaar and other desktop device tools use. Numbered below 73 so
+# systemd-logind applies it.
+
+# Logitech receivers and devices (USB): HID++ lives on hidraw
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="046d", TAG+="uaccess"
+# Logitech devices over Bluetooth
+SUBSYSTEM=="hidraw", KERNELS=="0005:046D:*", TAG+="uaccess"
+
+# Razer mice: control commands are feature reports on hidraw
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", TAG+="uaccess"
+# Razer mouse input nodes, needed only for software button remapping
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{idVendor}=="1532", TAG+="uaccess"
+
+# Razer BlackShark V3 family: these headsets only accept commands when the host
+# first reads their configuration descriptor the way Windows does. The helper
+# turns on the kernel's matching quirk and re-enumerates the device once.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1532", ATTR{idProduct}=="0576|0577|0579|057a|0a4e|0a55", RUN+="/usr/bin/systemd-run --no-block --quiet --collect @LIBEXECDIR@/usb-quirk %S%p"
+
+# Virtual input device used to perform button actions (shortcuts, media keys)
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

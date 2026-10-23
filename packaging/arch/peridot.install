@@ -1,0 +1,17 @@
+post_install() {
+  udevadm control --reload-rules 2>/dev/null
+  udevadm trigger --subsystem-match=hidraw --subsystem-match=input --subsystem-match=misc 2>/dev/null
+  modprobe uinput 2>/dev/null
+  cat <<MSG
+==> Start the Peridot service for your user (once, without sudo):
+      systemctl --user enable --now peridotd
+==> Replug your receivers/mice if they were connected during install.
+==> If Solaar or openrazer-daemon is running, stop it: two tools fighting over
+    the same device cause settings to flip back and forth.
+MSG
+}
+
+post_upgrade() {
+  udevadm control --reload-rules 2>/dev/null
+  echo "==> Restart the service: systemctl --user restart peridotd"
+}

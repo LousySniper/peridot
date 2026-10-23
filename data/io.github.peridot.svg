@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Peridot: a battery ring around a cut gem -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#1e2530"/>
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#3a4555" stroke-width="10"/>
+  <path d="M64 24 A40 40 0 1 1 25.4 74.4" fill="none" stroke="#a3bb4a" stroke-width="10" stroke-linecap="round"/>
+  <g stroke="#1e2530" stroke-width="1.5" stroke-linejoin="round">
+    <path d="M64 42 L84 58 L64 88 L44 58 Z" fill="#a3bb4a"/>
+    <path d="M44 58 L84 58 L64 88 Z" fill="#8da33c"/>
+    <path d="M54 50 L64 42 L74 50 L64 58 Z" fill="#c6dc6c"/>
+    <path d="M64 58 L64 88" fill="none"/>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Peridot
+GenericName=Mouse and Headset Settings
+Comment=DPI, lighting, buttons, sound and battery for Logitech and Razer devices
+Exec=peridot
+Icon=io.github.peridot
+Terminal=false
+Categories=Settings;HardwareSettings;Qt;
+Keywords=mouse;dpi;rgb;lighting;logitech;razer;headset;battery;sidetone;equalizer;polling;
+StartupNotify=true
+SingleMainWindow=true

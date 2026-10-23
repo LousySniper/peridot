@@ -1,0 +1,44 @@
+#!/bin/sh
+# Peridot: make a Razer BlackShark V3 family headset enable its settings channel.
+#
+# These headsets decide at power-on whether to accept commands, based on how
+# long the host's first configuration-descriptor read is: 255 bytes (as on
+# Windows) enables the channel, Linux's usual 9 bytes leaves it off. Linux 7.3+
+# can do the Windows-style read for listed devices (usbcore quirk "r"), so this
+# adds the headsets to that list and, once per boot, power-cycles the USB port
+# so the device enumerates again from power-on with the quirk in effect.
+#
+# Called by udev (through systemd-run) with the device's sysfs path.
+set -u
+dev="$1"
+param=/sys/module/usbcore/parameters/quirks
+ids="1532:0576:r 1532:0577:r 1532:0579:r 1532:057a:r 1532:0a4e:r 1532:0a55:r"
+
+[ -w "$param" ] || exit 0
+current=$(cat "$param")
+merged="$current"
+for id in $ids; do
+    case ",$current," in
+        *",$id,"*) ;;
+        *) merged="${merged:+$merged,}$id" ;;
+    esac
+done
+[ "$merged" = "$current" ] || printf '%s' "$merged" > "$param"
+
+[ -r "$dev/quirks" ] || exit 0
+flags=$(cat "$dev/quirks")
+# Already enumerated with the 255-byte read (bit 19): nothing to do.
+[ $(( flags & 0x80000 )) -eq 0 ] || exit 0
+
+name=$(basename "$dev")
+stamp="/run/peridot-usb-quirk-$name"
+# Only once per port per boot: kernels without the quirk would loop otherwise.
+[ -e "$stamp" ] && exit 0
+: > "$stamp"
+
+port=$(readlink -f "$dev/port" 2>/dev/null) || exit 0
+[ -w "$port/disable" ] || exit 0
+logger -t peridot "power-cycling $name so the BlackShark V3 enables its settings channel"
+echo 1 > "$port/disable"
+sleep 2
+echo 0 > "$port/disable"

@@ -1,0 +1,38 @@
+# Maintainer: LousySniper <https://github.com/LousySniper>
+pkgname=peridot
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Settings for Logitech and Razer mice and headsets: DPI, polling rate, lighting, buttons, sound and battery'
+arch=('x86_64' 'aarch64')
+url='https://github.com/LousySniper/peridot'
+license=('GPL-3.0-or-later')
+depends=('qt6-base' 'qt6-declarative' 'qt6-svg' 'hicolor-icon-theme' 'systemd')
+makedepends=('cargo' 'cmake' 'ninja')
+optdepends=('solaar: not needed, and should not run at the same time'
+            'pipewire: headset sound processing (EQ on the G733, virtual surround)'
+            'wireplumber: routes headset sound through that processing (0.5 or newer)'
+            'libmysofa: virtual 7.1 surround for headsets'
+            'libpulse: pactl, used by the headset sound processing')
+install=peridot.install
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable CARGO_TARGET_DIR=target
+  ( cd daemon && cargo build --release --locked )
+  cmake -S app -B build/app -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+  cmake --build build/app
+}
+
+check() {
+  cd "$pkgname-$pkgver/daemon"
+  cargo test --release --locked
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" PREFIX=/usr install
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

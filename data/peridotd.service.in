@@ -1,0 +1,20 @@
+[Unit]
+Description=Peridot device service for mice and headsets
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=io.github.peridot.Peridot1
+ExecStart=@BINDIR@/peridotd
+Restart=on-failure
+RestartSec=2
+# Hardening that works in a user manager without extra privileges
+NoNewPrivileges=yes
+LockPersonality=yes
+RestrictRealtime=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=graphical-session.target

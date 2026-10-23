@@ -30,6 +30,7 @@ const APPLY_ORDER: &[&str] = &[
     "auto_off",
     "idle_time",
     "low_battery",
+    "sticks",
 ];
 
 pub fn default_dir() -> PathBuf {
@@ -48,8 +49,9 @@ pub fn storage_key(key: &str, value: &Json) -> Option<String> {
         "lighting" | "brightness" => Some(format!("{}:{}", key, value.get("zone").as_str().unwrap_or("all"))),
         "button" => value.get("control").as_str().map(|c| format!("button:{}", c.trim_start_matches("0x"))),
         "dpi" | "dpi_cycle" | "dpi_stages" => Some("dpi_stages".into()),
+        "calibrate_sticks" => Some("sticks".into()),
         "polling_rate" | "sidetone" | "equalizer" | "auto_off" | "idle_time" | "low_battery" | "onboard_mode"
-        | "surround" => {
+        | "surround" | "sticks" => {
             Some(key.into())
         }
         _ => None,

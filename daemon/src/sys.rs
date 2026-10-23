@@ -63,6 +63,46 @@ pub const UI_SET_RELBIT: c_ulong = ioc(IOC_WRITE, b'U', 102, 4);
 pub const UI_DEV_CREATE: c_ulong = ioc(IOC_NONE, b'U', 1, 0);
 pub const UI_DEV_DESTROY: c_ulong = ioc(IOC_NONE, b'U', 2, 0);
 pub const UI_DEV_SETUP: c_ulong = ioc(IOC_WRITE, b'U', 3, std::mem::size_of::<uinput_setup>());
+pub const UI_SET_ABSBIT: c_ulong = ioc(IOC_WRITE, b'U', 103, 4);
+pub const UI_SET_MSCBIT: c_ulong = ioc(IOC_WRITE, b'U', 104, 4);
+pub const UI_SET_FFBIT: c_ulong = ioc(IOC_WRITE, b'U', 107, 4);
+pub const UI_SET_PROPBIT: c_ulong = ioc(IOC_WRITE, b'U', 110, 4);
+pub const UI_ABS_SETUP: c_ulong = ioc(IOC_WRITE, b'U', 4, std::mem::size_of::<uinput_abs_setup>());
+/// Force feedback is passed through as raw `struct ff_effect` (48 bytes on 64-bit).
+pub const FF_EFFECT_SIZE: usize = 48;
+/// `struct uinput_ff_upload`: request_id, retval, effect, old.
+pub const FF_UPLOAD_SIZE: usize = 8 + 2 * FF_EFFECT_SIZE;
+/// `struct uinput_ff_erase`: request_id, retval, effect_id.
+pub const FF_ERASE_SIZE: usize = 12;
+pub const UI_BEGIN_FF_UPLOAD: c_ulong = ioc(IOC_READ | IOC_WRITE, b'U', 200, FF_UPLOAD_SIZE);
+pub const UI_END_FF_UPLOAD: c_ulong = ioc(IOC_WRITE, b'U', 201, FF_UPLOAD_SIZE);
+pub const UI_BEGIN_FF_ERASE: c_ulong = ioc(IOC_READ | IOC_WRITE, b'U', 202, FF_ERASE_SIZE);
+pub const UI_END_FF_ERASE: c_ulong = ioc(IOC_WRITE, b'U', 203, FF_ERASE_SIZE);
+pub const EVIOCSFF: c_ulong = ioc(IOC_WRITE, b'E', 0x80, FF_EFFECT_SIZE);
+pub const EVIOCRMFF: c_ulong = ioc(IOC_WRITE, b'E', 0x81, 4);
+pub const fn eviocgabs(code: u16) -> c_ulong {
+    ioc(IOC_READ, b'E', 0x40 + code as u8, std::mem::size_of::<input_absinfo>())
+}
+pub const fn eviocgprop(len: usize) -> c_ulong {
+    ioc(IOC_READ, b'E', 0x09, len)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct input_absinfo {
+    pub value: i32,
+    pub minimum: i32,
+    pub maximum: i32,
+    pub fuzz: i32,
+    pub flat: i32,
+    pub resolution: i32,
+}
+
+#[repr(C)]
+pub struct uinput_abs_setup {
+    pub code: u16,
+    pub absinfo: input_absinfo,
+}
 
 #[repr(C)]
 pub struct input_id {
@@ -142,6 +182,26 @@ pub fn poll_readable(fd: RawFd, timeout_ms: i32) -> io::Result<bool> {
     }
 }
 
+/// Wait until any of `fds` is readable. Returns which ones are; an error or
+/// hangup on one of them is an error.
+pub fn poll_any(fds: &[RawFd], timeout_ms: i32) -> io::Result<Vec<bool>> {
+    let mut ps: Vec<pollfd> = fds.iter().map(|fd| pollfd { fd: *fd, events: POLLIN, revents: 0 }).collect();
+    loop {
+        let r = unsafe { c_poll(ps.as_mut_ptr(), ps.len() as c_ulong, timeout_ms) };
+        if r < 0 {
+            let e = io::Error::last_os_error();
+            if e.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(e);
+        }
+        if ps.iter().any(|p| p.revents & (POLLERR | POLLHUP | POLLNVAL) != 0) {
+            return Err(io::Error::new(io::ErrorKind::BrokenPipe, "device hung up"));
+        }
+        return Ok(ps.iter().map(|p| p.revents & POLLIN != 0).collect());
+    }
+}
+
 pub fn uid() -> u32 {
     unsafe { getuid() }
 }
@@ -218,7 +278,18 @@ pub fn recv_bytes(fd: &OwnedFd, buf: &mut [u8]) -> io::Result<usize> {
 pub const EV_SYN: u16 = 0x00;
 pub const EV_KEY: u16 = 0x01;
 pub const EV_REL: u16 = 0x02;
+pub const EV_ABS: u16 = 0x03;
 pub const EV_MSC: u16 = 0x04;
+pub const EV_FF: u16 = 0x15;
+pub const EV_UINPUT: u16 = 0x0101;
+pub const UI_FF_UPLOAD: u16 = 1;
+pub const UI_FF_ERASE: u16 = 2;
+pub const ABS_X: u16 = 0x00;
+pub const ABS_Y: u16 = 0x01;
+pub const ABS_RX: u16 = 0x03;
+pub const ABS_RY: u16 = 0x04;
+pub const BTN_SOUTH: u16 = 0x130;
+pub const BUS_BLUETOOTH: u16 = 0x05;
 pub const SYN_REPORT: u16 = 0;
 pub const REL_X: u16 = 0x00;
 pub const REL_Y: u16 = 0x01;
@@ -238,6 +309,16 @@ mod tests {
         assert_eq!(hidiocsfeature(91), 0xC05B4806);
         assert_eq!(hidiocgfeature(91), 0xC05B4807);
         assert_eq!(EVIOCGRAB, 0x40044590);
+        assert_eq!(eviocgabs(0), 0x80184540);
+        assert_eq!(EVIOCSFF, 0x40304580);
+        assert_eq!(EVIOCRMFF, 0x40044581);
+        assert_eq!(UI_SET_ABSBIT, 0x40045567);
+        assert_eq!(UI_SET_FFBIT, 0x4004556b);
+        assert_eq!(UI_ABS_SETUP, 0x401c5504);
+        assert_eq!(UI_BEGIN_FF_UPLOAD, 0xc06855c8);
+        assert_eq!(UI_END_FF_UPLOAD, 0x406855c9);
+        assert_eq!(UI_BEGIN_FF_ERASE, 0xc00c55ca);
+        assert_eq!(UI_END_FF_ERASE, 0x400c55cb);
         assert_eq!(UI_SET_EVBIT, 0x40045564);
         assert_eq!(UI_DEV_CREATE, 0x5501);
         assert_eq!(UI_DEV_SETUP, 0x405c5503);

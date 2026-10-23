@@ -132,7 +132,7 @@ void Tray::checkBatteries(const QVariantList &devices)
         const QString kind = d.value("kind").toString();
         notify(tr("%1 battery at %2%").arg(name).arg(pct),
                level <= 5 ? tr("Charge it now, it will switch off soon.") : tr("Plug it in when you get a chance."),
-               kind == "headset" ? "audio-headset" : "input-mouse");
+               kind == "headset" ? "audio-headset" : kind == "controller" ? "input-gaming" : "input-mouse");
     }
 }
 

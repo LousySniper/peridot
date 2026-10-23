@@ -12,6 +12,7 @@ Item {
         const d = device
         const out = []
         if (d.dpi || d.polling_rate) out.push({ id: "sensitivity", label: qsTr("Sensitivity") })
+        if (d.sticks) out.push({ id: "sticks", label: qsTr("Sticks") })
         if (d.audio) out.push({ id: "sound", label: qsTr("Sound") })
         if (d.lighting) out.push({ id: "lighting", label: qsTr("Lighting") })
         if (d.buttons) out.push({ id: "buttons", label: qsTr("Buttons") })
@@ -156,6 +157,7 @@ Item {
                         case "lighting": return lighting
                         case "buttons": return buttons
                         case "sound": return sound
+                        case "sticks": return sticks
                         case "power": return power
                         default: return about
                         }
@@ -169,6 +171,7 @@ Item {
     Component { id: lighting; LightingSection { device: root.device } }
     Component { id: buttons; ButtonsSection { device: root.device } }
     Component { id: sound; SoundSection { device: root.device } }
+    Component { id: sticks; SticksSection { device: root.device } }
     Component { id: power; PowerSection { device: root.device } }
     Component { id: about; AboutSection { device: root.device; onForgetRequested: root.forgetRequested() } }
 }

@@ -6,7 +6,8 @@ use peridot::hidpp::receiver::{self, Params};
 use peridot::json::Json;
 use peridot::model::{Connection, Device};
 use peridot::razer;
-use peridot::sim::{SimHidppNode, SimLogi, SimRazer, STD_MATRIX};
+use peridot::centurion::{self, CenturionDevice};
+use peridot::sim::{SimCenturion, SimHidppNode, SimLogi, SimRazer, STD_MATRIX};
 use std::sync::mpsc::{channel, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -274,6 +275,53 @@ fn logitech_headset_with_locked_equalizer_gets_a_software_one() {
     backend::lock(&dev).apply("equalizer", &j("[5,-3,0,0,20]")).unwrap();
     assert_eq!(backend::lock(&dev).state().equalizer.as_ref().unwrap().gains, vec![5, -3, 0, 0, 12]);
     node.with_device(0xFF, |d| assert_eq!(d.eq, vec![0, 2, 0, -1, 3]));
+    be.stop();
+}
+
+#[test]
+fn logitech_g522_settings() {
+    let sim = SimCenturion::new(true);
+    let t: Arc<dyn Transport> = sim.clone();
+    let mut dev = CenturionDevice::new(t, centurion::find_model(0x0b18).unwrap());
+    dev.read_all();
+    let s = dev.state().clone();
+    assert!(s.online);
+    assert_eq!(s.name, "G522 LIGHTSPEED");
+    assert_eq!(s.battery.as_ref().unwrap().percent, Some(80));
+    assert_eq!(s.sidetone.as_ref().unwrap().value, 44); // 4 of 9
+    assert_eq!(s.auto_off.as_ref().unwrap().value, 30);
+    assert_eq!(s.equalizer.as_ref().unwrap().freqs.len(), 10);
+    assert_eq!(s.modes.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), vec!["lights", "voice_prompts", "mute_led"]);
+
+    dev.apply("sidetone", &Json::Num(100.0)).unwrap();
+    dev.apply("auto_off", &Json::Num(15.0)).unwrap();
+    dev.apply("equalizer", &j("[6,0,0,0,0,-3,0,0,0,0]")).unwrap();
+    dev.apply("mode", &j(r#"{"id":"lights","value":"off"}"#)).unwrap();
+    dev.apply("mode", &j(r#"{"id":"voice_prompts","value":"on"}"#)).unwrap();
+    let st = sim.state.lock().unwrap();
+    assert_eq!(st.sidetone, 9);
+    assert_eq!(st.auto_sleep, [15, 0x01, 0x10]);
+    assert_eq!(st.eq, centurion::g522_eq_params(&[6, 0, 0, 0, 0, -3, 0, 0, 0, 0]));
+    assert_eq!(st.lights, vec![0; 10]);
+    assert_eq!(st.voice_prompts, Some(true));
+}
+
+#[test]
+fn logitech_g522_switched_on_after_startup() {
+    let sim = SimCenturion::new(false);
+    let (sink, rx) = sink();
+    let t: Arc<dyn Transport> = sim.clone();
+    let be = centurion::start(t, centurion::find_model(0x0b18).unwrap(), "c".into(), sink);
+    let dev = wait_ready(&rx);
+    assert!(!backend::lock(&dev).state().online);
+    assert!(backend::lock(&dev).state().sidetone.is_none());
+    sim.power_on();
+    let dev = wait_ready(&rx);
+    {
+        let d = backend::lock(&dev);
+        assert!(d.state().online);
+        assert!(d.state().sidetone.is_some() && d.state().equalizer.is_some());
+    }
     be.stop();
 }
 

@@ -708,3 +708,149 @@ impl Transport for SimRazer {
         format!("sim:razer-{:04x}", self.state.lock().unwrap().pid)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Logitech Centurion (G522 framing): a dongle with a bridge at index 3 and a
+// headset behind it, answering like HeadsetControl's scripted tests.
+
+pub struct SimCenturionState {
+    /// The headset is on (the dongle always answers).
+    pub online: bool,
+    pub battery: u8,
+    pub sidetone: u8,
+    pub auto_sleep: [u8; 3],
+    pub eq: Vec<u8>,
+    pub lights: Vec<u8>,
+    pub voice_prompts: Option<bool>,
+    queue: VecDeque<Vec<u8>>,
+}
+
+pub struct SimCenturion {
+    pub state: Mutex<SimCenturionState>,
+}
+
+const CENT_PREFIX: [u8; 2] = [0x50, 0x23];
+const CENT_BRIDGE: u8 = 0x03;
+/// (feature id, index in the headset)
+const CENT_FEATURES: [(u16, u8); 7] =
+    [(0x0104, 0x02), (0x020d, 0x05), (0x0604, 0x0d), (0x0621, 0x12), (0x0108, 0x14), (0x060b, 0x1a), (0x0601, 0x1b)];
+
+impl SimCenturion {
+    pub fn new(online: bool) -> Arc<SimCenturion> {
+        Arc::new(SimCenturion {
+            state: Mutex::new(SimCenturionState {
+                online,
+                battery: 80,
+                sidetone: 4,
+                auto_sleep: [30, 0x01, 0x10],
+                eq: vec![],
+                lights: vec![],
+                voice_prompts: None,
+                queue: VecDeque::new(),
+            }),
+        })
+    }
+
+    fn reply(s: &mut SimCenturionState, payload: &[u8]) {
+        s.queue.push_back(crate::centurion::frame(&CENT_PREFIX, payload, 0).to_vec());
+    }
+
+    /// The headset switches on and the dongle announces it.
+    pub fn power_on(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.online = true;
+        Self::reply(&mut s, &[CENT_BRIDGE, 0x00, 0x00, 0x01]);
+    }
+
+    fn headset(s: &mut SimCenturionState, feature: u8, function: u8, params: &[u8]) -> Option<Vec<u8>> {
+        let id = CENT_FEATURES.iter().find(|(_, i)| *i == feature).map(|(id, _)| *id);
+        Some(match (feature, id, function) {
+            (0x00, _, 0x00) => {
+                let wanted = u16::from_be_bytes([params[0], params[1]]);
+                vec![CENT_FEATURES.iter().find(|(id, _)| *id == wanted).map_or(0, |(_, i)| *i), 0x00, 0x01]
+            }
+            (_, Some(0x0104), 0x00) => vec![s.battery, s.battery, 0x00],
+            (_, Some(0x0604), 0x00) => vec![0x01, 0x01, 0x39, s.sidetone],
+            (_, Some(0x0604), 0x10) => {
+                s.sidetone = *params.last()?;
+                vec![]
+            }
+            (_, Some(0x0108), 0x00) => s.auto_sleep.to_vec(),
+            (_, Some(0x0108), 0x10) => {
+                s.auto_sleep.copy_from_slice(params.get(..3)?);
+                vec![]
+            }
+            (_, Some(0x020d), 0x20) => {
+                s.eq = params.to_vec();
+                vec![]
+            }
+            (_, Some(0x0621), 0x30) => {
+                s.lights = params.to_vec();
+                vec![]
+            }
+            (_, Some(0x060b), 0x50) => {
+                s.voice_prompts = Some(params.get(1) == Some(&1));
+                vec![]
+            }
+            (_, Some(0x0601), 0x20) => vec![],
+            _ => return None,
+        })
+    }
+}
+
+impl Transport for SimCenturion {
+    fn write(&self, data: &[u8]) -> io::Result<()> {
+        let mut s = self.state.lock().unwrap();
+        let Some(p) = crate::centurion::payload(&CENT_PREFIX, data) else { return Ok(()) };
+        let (index, fsw) = (p[0], p[1]);
+        if index == 0x00 && fsw == 0x01 {
+            // Root.getFeature on the dongle: only the bridge exists.
+            let id = u16::from_be_bytes([p[2], p[3]]);
+            Self::reply(&mut s, &[0x00, 0x01, if id == 0x0003 { CENT_BRIDGE } else { 0 }, 0x00, 0x01]);
+        } else if index == CENT_BRIDGE && fsw == 0x01 {
+            // Bridge status: [?, ?, connected, connected]
+            let on = s.online as u8;
+            Self::reply(&mut s, &[CENT_BRIDGE, 0x01, 0x00, on, on, on]);
+        } else if index == CENT_BRIDGE && fsw == 0x11 {
+            Self::reply(&mut s, &[CENT_BRIDGE, 0x11]); // ACK
+            if !s.online {
+                return Ok(()); // the headset never answers
+            }
+            let (feature, function, params) = (p[5], p[6] & 0xF0, p[7..].to_vec());
+            match Self::headset(&mut s, feature, function, &params) {
+                Some(answer) => {
+                    let size = (answer.len() + 3) as u8;
+                    let mut r = vec![CENT_BRIDGE, 0x10, 0x00, size, 0x00, feature, function | 0x01];
+                    r.extend_from_slice(&answer);
+                    Self::reply(&mut s, &r);
+                }
+                None => Self::reply(&mut s, &[CENT_BRIDGE, 0x10, 0x00, 0x05, 0x00, 0xFF, feature, function, 0x02]),
+            }
+        }
+        Ok(())
+    }
+
+    fn read_timeout(&self, buf: &mut [u8], _timeout_ms: i32) -> io::Result<usize> {
+        let mut s = self.state.lock().unwrap();
+        match s.queue.pop_front() {
+            Some(f) => {
+                let n = f.len().min(buf.len());
+                buf[..n].copy_from_slice(&f[..n]);
+                Ok(n)
+            }
+            None => Ok(0),
+        }
+    }
+
+    fn set_feature(&self, _data: &[u8]) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn get_feature(&self, _buf: &mut [u8]) -> io::Result<usize> {
+        Ok(0)
+    }
+
+    fn describe(&self) -> String {
+        "sim:centurion".into()
+    }
+}

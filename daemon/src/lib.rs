@@ -3,7 +3,7 @@
 //!
 //! The crate is dependency-free on purpose. Layers, bottom up:
 //! - [`sys`], [`hid`]: hidraw, ioctl, netlink hotplug
-//! - [`hidpp`], [`razer`]: vendor protocols and drivers
+//! - [`hidpp`], [`centurion`], [`razer`]: vendor protocols and drivers
 //! - [`model`]: the vendor-neutral device model the UI consumes
 //! - [`manager`], [`service`], [`dbus`]: the daemon and its D-Bus API
 //! - [`remap`]: software button actions (uinput, evdev grabs)
@@ -15,6 +15,7 @@ pub mod log;
 pub mod actions;
 pub mod backend;
 pub mod battery;
+pub mod centurion;
 pub mod config;
 pub mod dbus;
 pub mod gamepad;

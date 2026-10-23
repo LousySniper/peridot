@@ -8,6 +8,7 @@ use crate::backend::{self, Backend, BackendEvent, DeviceHandle, Sink};
 use crate::config::{self, Store};
 use crate::dbus::{self, Connection};
 use crate::hid::{self, HidInfo, HidRaw, Hotplug, Transport};
+use crate::centurion;
 use crate::gamepad;
 use crate::hidpp;
 use crate::json::Json;
@@ -174,6 +175,20 @@ impl Manager {
         match info.vid {
             0x046D => {
                 let desc = info.report_info();
+                if let Some(model) = centurion::find_model(info.pid) {
+                    if !centurion::is_control_interface(&desc.applications) {
+                        return;
+                    }
+                    let t: Arc<dyn Transport> = match HidRaw::open(&info.path) {
+                        Ok(t) => Arc::new(t),
+                        Err(e) => return self.open_failed(&info, e),
+                    };
+                    crate::debug!("{}: Logitech Centurion node ({})", key, info.name);
+                    let be = centurion::start(t, model, key.clone(), self.sink());
+                    self.backends.insert(key.clone(), Box::new(be));
+                    self.backend_nodes.insert(key, info);
+                    return;
+                }
                 if !desc.is_hidpp() {
                     return;
                 }

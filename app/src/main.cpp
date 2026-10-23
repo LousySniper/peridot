@@ -15,6 +15,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
     app.setApplicationName("peridot");
+    app.setOrganizationName("peridot"); // settings in ~/.config/peridot/peridot.conf
     app.setApplicationDisplayName("Peridot");
     app.setApplicationVersion("0.2.0");
     app.setDesktopFileName("io.github.peridot");

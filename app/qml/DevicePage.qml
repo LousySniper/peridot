@@ -73,10 +73,11 @@ Item {
             Layout.topMargin: 22
             spacing: 26
             Repeater {
-                model: root.sections
+                model: root.sections.length
                 delegate: Item {
                     id: tab
-                    required property var modelData
+                    required property int index
+                    readonly property var modelData: root.sections[index]
                     readonly property bool current: root.shown === modelData.id
                     width: label.implicitWidth
                     height: 34

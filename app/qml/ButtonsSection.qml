@@ -46,10 +46,11 @@ Column {
     Item { width: 1; height: 8 }
 
     Repeater {
-        model: root.controls
+        model: root.controls.length
         delegate: RowLayout {
             id: row
-            required property var modelData
+            required property int index
+            readonly property var modelData: root.controls[index]
             width: root.width
             height: 48
             spacing: 16

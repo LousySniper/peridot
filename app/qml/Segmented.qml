@@ -12,11 +12,13 @@ Row {
     spacing: 0
 
     Repeater {
-        model: root.options
+        // A count, not the array: an update keeps the segments and only
+        // changes their values, so nothing is rebuilt mid-animation.
+        model: root.options.length
         delegate: Rectangle {
             id: seg
-            required property var modelData
             required property int index
+            readonly property var modelData: root.options[index]
             readonly property var val: (modelData !== null && typeof modelData === "object") ? modelData.value : modelData
             readonly property string label: (modelData !== null && typeof modelData === "object") ? modelData.label : String(modelData)
             readonly property bool selected: root.current === val

@@ -23,7 +23,7 @@ Rectangle {
         id: list
         anchors.fill: parent
         anchors.topMargin: 16
-        model: Daemon.devices
+        model: Daemon.devices.length
         spacing: 2
         clip: true
         boundsBehavior: Flickable.StopAtBounds
@@ -35,7 +35,8 @@ Rectangle {
 
         delegate: Rectangle {
             id: row
-            required property var modelData
+            required property int index
+            readonly property var modelData: Daemon.devices[index] || ({})
             readonly property bool selected: modelData.id === root.currentId
             readonly property var bat: modelData.battery
             readonly property bool low: modelData.online && bat && bat.percent !== null && bat.percent <= 25 && !bat.charging

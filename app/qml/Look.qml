@@ -1,12 +1,22 @@
 pragma Singleton
 import QtQuick
+import QtCore
 
 // Design tokens. Mineral slate surfaces, one peridot accent reserved for
 // "active" (current stage, selected effect, charging). Follows the desktop's
-// light/dark preference.
+// light/dark preference unless the user picked one (sidebar switch, or
+// --color-scheme on the command line).
 QtObject {
-    readonly property bool dark: ForcedScheme === "light" ? false
-                               : ForcedScheme === "dark" ? true
+    /// "system", "light" or "dark"; remembered between runs.
+    property string theme: store.theme
+    onThemeChanged: store.theme = theme
+    readonly property Settings store: Settings {
+        category: "appearance"
+        property string theme: "system"
+    }
+    readonly property string scheme: ForcedScheme === "light" || ForcedScheme === "dark" ? ForcedScheme : theme
+    readonly property bool dark: scheme === "light" ? false
+                               : scheme === "dark" ? true
                                : Application.styleHints.colorScheme !== Qt.ColorScheme.Light
 
     readonly property color window:   dark ? "#1e2530" : "#edf0ee"

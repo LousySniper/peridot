@@ -14,8 +14,19 @@ ApplicationWindow {
     property string currentId: ""
     property string section: InitialSection
     property string pendingSelect: InitialDevice
-    // re-evaluated whenever the device list changes
-    readonly property var current: { Daemon.devices; return currentId ? Daemon.device(currentId) : ({}) }
+    // The shown device. Replaced only when its data actually changes, so an
+    // update from another device doesn't rebuild the page being looked at.
+    property var current: ({})
+    property string currentJson: "{}"
+    function updateCurrent() {
+        const d = currentId ? Daemon.device(currentId) : ({})
+        const json = JSON.stringify(d)
+        if (json !== currentJson) {
+            currentJson = json
+            current = d
+        }
+    }
+    onCurrentIdChanged: updateCurrent()
     readonly property var warnings: (Daemon.status.warnings || []).filter(w => w.indexOf("uinput") < 0)
 
     // keep a valid selection as devices come and go
@@ -37,6 +48,7 @@ ApplicationWindow {
                 win.pendingSelect = ""
             }
             win.reconcile()
+            win.updateCurrent()
         }
         function onSettingSaved(id, key, deferred) {
             if (deferred) toast.show(qsTr("Saved. It will apply when the device wakes up."), false)
@@ -98,10 +110,26 @@ ApplicationWindow {
               : qsTr("Plug in a Logitech or Razer device, or its wireless receiver. Wireless devices appear as soon as they wake up.")
     }
 
+    Segmented {
+        id: themeSwitch
+        visible: Daemon.available && Daemon.devices.length > 0
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.margins: 16
+        options: [
+            { value: "system", label: qsTr("Auto") },
+            { value: "light", label: qsTr("Light") },
+            { value: "dark", label: qsTr("Dark") }
+        ]
+        current: Look.theme
+        onPicked: (v) => Look.theme = v
+        Accessible.name: qsTr("Appearance")
+    }
+
     Text {
         visible: Daemon.available && Daemon.devices.length > 0 && win.warnings.length > 0
         anchors.left: parent.left
-        anchors.bottom: parent.bottom
+        anchors.bottom: themeSwitch.top
         anchors.margins: 16
         width: 216
         wrapMode: Text.Wrap

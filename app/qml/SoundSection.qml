@@ -64,9 +64,10 @@ Column {
     }
 
     Repeater {
-        model: root.audio.modes || []
+        model: (root.audio.modes || []).length
         delegate: SettingRow {
-            required property var modelData
+            required property int index
+            readonly property var modelData: root.audio.modes[index]
             label: modelData.name
             hint: modelData.hint
             Segmented {
@@ -117,11 +118,11 @@ Column {
             spacing: 0
             width: parent.width
             Repeater {
-                model: root.eq ? root.eq.bands : []
+                model: root.eq ? root.eq.bands.length : 0
                 delegate: Column {
                     id: band
-                    required property var modelData
                     required property int index
+                    readonly property var modelData: root.eq.bands[index]
                     width: parent.width / root.eq.bands.length
                     spacing: 6
                     Text {

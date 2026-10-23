@@ -68,10 +68,10 @@ Item {
 
     // range ends and ticks
     Repeater {
-        model: [root.lo].concat(root.ticks).concat([root.hi])
+        model: root.ticks.length + 2
         delegate: Item {
-            required property var modelData
             required property int index
+            readonly property var modelData: index === 0 ? root.lo : index === root.ticks.length + 1 ? root.hi : root.ticks[index - 1]
             readonly property bool end: index === 0 || index === root.ticks.length + 1
             x: root.xFor(modelData)
             y: root.trackY + 8

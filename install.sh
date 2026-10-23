@@ -79,7 +79,13 @@ if ! systemctl --user is-active --quiet peridotd; then
 fi
 peridotctl list || true
 
-if ! pgrep -x peridot >/dev/null && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+# An app left running from before (it lives in the tray) would keep the old
+# version; restart it.
+if pgrep -x peridot >/dev/null; then
+    pkill -x peridot || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -x peridot >/dev/null || break; sleep 0.3; done
+fi
+if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
     setsid -f peridot >/dev/null 2>&1 || true
 fi
 

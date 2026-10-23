@@ -222,9 +222,6 @@ Column {
         SectionTitle {
             width: parent.width
             text: qsTr("On this computer")
-            hint: root.pc && root.pc.format
-                  ? qsTr("Processing Peridot does before sound reaches the headset, like G HUB on Windows. The headset itself always plays %1; that's fixed by its hardware, on Windows too.").arg(root.pc.format)
-                  : qsTr("Processing Peridot does before sound reaches the headset, like G HUB on Windows.")
         }
 
         Text {

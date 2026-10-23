@@ -47,7 +47,6 @@ qt_add_qml_module(peridot
         qml/ButtonsSection.qml
         qml/ShortcutDialog.qml
         qml/SoundSection.qml
-        qml/SticksSection.qml
         qml/PowerSection.qml
         qml/AboutSection.qml
         qml/Toast.qml

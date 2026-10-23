@@ -35,7 +35,7 @@ was saved and is applied when it wakes up.
   "id": "logitech-4a1c0b77",          // stable; settings are saved under it
   "name": "PRO X Wireless",
   "vendor": "logitech",                // or "razer"
-  "kind": "mouse",                     // mouse | headset | keyboard | controller | other
+  "kind": "mouse",                     // mouse | headset | keyboard | other
   "connection": "receiver",            // usb | receiver | bluetooth
   "online": true,                      // false = paired but asleep
   "model": "046d:4093", "via": "Lightspeed Receiver",
@@ -69,9 +69,6 @@ Sections a device doesn't support are `null`.
 `audio.equalizer.presets` lists presets for the headset as
 `{"id", "name", "gains"}` (empty when the app should offer generic ones).
 
-`sticks` (controllers) is `{"enabled", "left": {"deadzone", "center"}, "right": ...,
-"active", "error"}`; `active` means games are getting the corrected copy.
-
 `audio.equalizer.custom` is the curve the user last tuned by hand, if any.
 
 `audio.pc` is present for USB headsets and holds what Peridot does on the
@@ -99,8 +96,6 @@ WirePlumber smart filter on the headset's sink, node `peridot_eq_<id>`).
 | `equalizer` | array of gains in dB, one per band; or `{"gains": [...], "custom": true}` for a curve the user tuned, which is also kept as `audio.equalizer.custom` |
 | `auto_off` | minutes, 0 = never |
 | `surround` | `true` / `false`: virtual 7.1 surround on the computer |
-| `sticks` | controllers: `{"enabled": true, "left": {"deadzone": 8}, "right": {"deadzone": 8}}`, any part of it (dead zones 0-30 %, `center` from calibration) |
-| `calibrate_sticks` | controllers: `true`; measures the resting sticks for 2 s, sets centres and dead zones and turns the fix on |
 | `mode` | `{"id": "anc", "value": "ambient"}`, one of `audio.modes` (not saved: the headset's own buttons change these) |
 | `idle_time` | seconds (60-900) |
 | `low_battery` | percent (5-25) |

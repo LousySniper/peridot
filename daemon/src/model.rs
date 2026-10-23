@@ -55,7 +55,6 @@ pub enum Kind {
     Mouse,
     Headset,
     Keyboard,
-    Controller,
 }
 
 impl Kind {
@@ -64,7 +63,6 @@ impl Kind {
             Kind::Mouse => "mouse",
             Kind::Headset => "headset",
             Kind::Keyboard => "keyboard",
-            Kind::Controller => "controller",
             Kind::Other => "other",
         }
     }
@@ -400,8 +398,6 @@ pub struct DeviceState {
     /// Percent at which the device signals low battery.
     pub low_battery: Option<Range>,
     pub onboard_mode: Option<String>,
-    /// Controllers: the stick-drift fix (see `gamepad`).
-    pub sticks: Option<Json>,
     pub notes: Vec<String>,
 }
 
@@ -504,7 +500,6 @@ impl DeviceState {
         }
         j.set("power", if power.as_obj().map_or(true, |o| o.is_empty()) { Json::Null } else { power });
         j.set("onboard_mode", self.onboard_mode.clone());
-        j.set("sticks", self.sticks.clone());
         j.set("notes", self.notes.clone());
         j
     }

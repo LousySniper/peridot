@@ -9,7 +9,6 @@ use crate::config::{self, Store};
 use crate::dbus::{self, Connection};
 use crate::hid::{self, HidInfo, HidRaw, Hotplug, Transport};
 use crate::centurion;
-use crate::gamepad;
 use crate::hidpp;
 use crate::json::Json;
 use crate::model::{self, Connection as Link};
@@ -151,20 +150,6 @@ impl Manager {
         for info in hid::enumerate() {
             if !self.seen.contains(&info.sys_name) {
                 self.consider(info);
-            }
-        }
-        self.scan_controllers();
-    }
-
-    /// Game controllers come from evdev rather than hidraw; their backends are
-    /// keyed by event node.
-    fn scan_controllers(&mut self) {
-        for pad in gamepad::enumerate() {
-            if !self.backends.contains_key(&pad.event) {
-                crate::debug!("{}: controller {}", pad.event, pad.name);
-                let key = pad.event.clone();
-                let backend = gamepad::start(pad, self.sink());
-                self.backends.insert(key, Box::new(backend));
             }
         }
     }
@@ -321,9 +306,6 @@ impl Manager {
                 if let Some(info) = hid::info_for(&name) {
                     self.consider(info);
                 }
-                // A controller's input nodes appear along with its hidraw node.
-                std::thread::sleep(Duration::from_millis(300));
-                self.scan_controllers();
             }
             Event::Hotplug(Hotplug::Removed(name)) => {
                 self.seen.remove(&name);
@@ -500,10 +482,7 @@ impl Manager {
                 // DPI is stored as the resulting stage set when we know it; a
                 // plain value set while the device was never seen is kept as-is.
                 let dpi_now = snapshot.as_ref().map(|s| s.get("dpi").clone()).unwrap_or(Json::Null);
-                // Stick settings are stored whole (calibration sets several at once).
-                let entry = if skey == "sticks" {
-                    snapshot.as_ref().map(|s| s.get("sticks").clone()).filter(|v| !v.is_null()).map(|v| (skey, v))
-                } else if skey != "dpi_stages" {
+                let entry = if skey != "dpi_stages" {
                     Some((skey, a.value.clone()))
                 } else if !dpi_now.is_null() && a.result.is_ok() {
                     let v = Json::obj().with("stages", dpi_now.get("stages").clone()).with("active", dpi_now.get("active_stage").clone());

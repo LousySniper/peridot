@@ -7,8 +7,7 @@
 //! - [`model`]: the vendor-neutral device model the UI consumes
 //! - [`manager`], [`service`], [`dbus`]: the daemon and its D-Bus API
 //! - [`remap`]: software button actions (uinput, evdev grabs)
-//! - [`softeq`]: headset sound processing in PipeWire (EQ, virtual surround)
-//! - [`gamepad`]: game controllers (battery, stick-drift fix)
+//! - [`softeq`]: PipeWire equalizer for headsets that can't store one
 
 pub mod log;
 
@@ -18,7 +17,6 @@ pub mod battery;
 pub mod centurion;
 pub mod config;
 pub mod dbus;
-pub mod gamepad;
 pub mod hid;
 pub mod hidpp;
 pub mod json;

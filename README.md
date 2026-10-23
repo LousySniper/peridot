@@ -1,20 +1,18 @@
 # Peridot
 
-One app for your Logitech and Razer mice, keyboards and headsets, and your game
-controllers, on Linux: battery in the tray, DPI stages, polling rate, RGB
-lighting, button remapping, headset sidetone, equalizer, virtual surround and
-auto power-off, and a fix for controller stick drift. Built for CachyOS / Arch
-with KDE Plasma, works on any systemd desktop.
+One app for your Logitech and Razer mice, keyboards and headsets on Linux:
+battery in the tray, DPI stages, polling rate, RGB lighting, button remapping,
+and headset sidetone, equalizer, virtual surround and auto power-off. Built for
+CachyOS / Arch with KDE Plasma, works on any systemd desktop.
 
 It replaces juggling Solaar, OpenRazer + Polychromatic, piper/ratbagd and
 HeadsetControl with a single service and a single window.
 
 ![Sound settings for a Logitech G733](docs/screenshots/sound.png)
 
-| | |
-|---|---|
-| ![DPI stages](docs/screenshots/sensitivity.png) | ![Button remapping](docs/screenshots/buttons.png) |
-| ![Controller stick drift](docs/screenshots/sticks.png) | ![Light theme](docs/screenshots/light-mode.png) |
+| | | |
+|---|---|---|
+| ![DPI stages](docs/screenshots/sensitivity.png) | ![Button remapping](docs/screenshots/buttons.png) | ![Light theme](docs/screenshots/light-mode.png) |
 
 ## What it does
 
@@ -67,19 +65,6 @@ Things that make day-to-day use nicer than the existing tools:
 Like in G HUB, sound processing on the computer only applies to sound from
 this computer. The app also shows the headset's audio format (the G733 plays
 48 kHz, 16-bit stereo); that's fixed by the hardware, on Windows too.
-
-### Game controllers
-
-DualSense, DualShock 4, Xbox (Bluetooth, xpadneo, xone), Switch Pro, 8BitDo
-and other controllers show their battery, with low-battery notifications.
-
-**Stick drift:** Peridot can give games a corrected copy of the controller,
-with the sticks re-centred on where they actually rest and a dead zone just
-above the drift. Past the dead zone the stick still reaches its full range, and
-vibration is passed through. *Calibrate* measures the resting sticks for two
-seconds and sets everything up. The touchpad and motion sensors stay on the
-original controller. Steam and some games read controllers directly and won't
-see the fix; for those, use the dead zone in Steam's controller settings.
 
 ### Razer headsets
 
@@ -136,7 +121,6 @@ peridotctl button "pro x" 0053 key:ctrl+shift+t
 peridotctl sidetone g733 40
 peridotctl eq g733 4,3,1,0,-1,-1,0,1,3,3
 peridotctl set g733 surround true
-peridotctl set dualsense calibrate_sticks true
 peridotctl brightness g733 40
 peridotctl mode "v3 pro" anc ambient
 peridotctl monitor
@@ -166,7 +150,6 @@ peridotctl (CLI)            ──D-Bus──┘    ├─ HID++ 1.0/2.0 driver 
 - `daemon/src/centurion.rs`: Logitech's newer headset protocol (G PRO X 2, G522).
 - `daemon/src/razer/kraken.rs`: classic Kraken headsets (memory writes).
 - `daemon/src/softeq.rs`: the headset sound filter (EQ, virtual surround).
-- `daemon/src/gamepad.rs`: controllers (battery, the uinput copy with corrected sticks).
 - `daemon/src/sim.rs`: byte-level device simulators used by the tests.
 - Access is granted through udev `uaccess` (only the active local user), the
   same model Solaar uses. No root daemon.
@@ -195,7 +178,7 @@ python3 tools/gen_razer_table.py razer.json /path/to/openrazer/daemon/openrazer_
 ## Status and limits
 
 - Tested on real hardware: Razer DeathAdder V3 Pro, Razer BlackShark V3 X,
-  Logitech G733 and a DualSense. Everything else is implemented from the
+  and Logitech G733. Everything else is implemented from the
   sources below and checked against byte-level simulators; if something
   doesn't work on your device, please report it.
 - Protocol details come from Solaar, libratbag, OpenRazer, HeadsetControl

@@ -43,6 +43,9 @@ pub struct SimLogi {
     pub dongle: bool,
     /// An old device that only speaks HID++ 1.0 (battery in registers).
     pub hidpp10: bool,
+    /// Fail this many lighting requests with error 0x05 (a headset still
+    /// starting up after being switched on).
+    pub led_warmup: u32,
     pub auto_off: u8,
     pub log: Vec<String>,
 }
@@ -82,6 +85,7 @@ impl SimLogi {
             eq_locked: false,
             dongle: false,
             hidpp10: false,
+            led_warmup: 0,
             auto_off: 0,
             log: vec![],
         }
@@ -139,6 +143,7 @@ impl SimLogi {
             eq_locked: false,
             dongle: false,
             hidpp10: false,
+            led_warmup: 0,
             auto_off: 30,
             log: vec![],
         }
@@ -504,6 +509,10 @@ impl Transport for SimHidppNode {
                 } else {
                     return Ok(()); // a powered-off direct device just doesn't answer
                 }
+            }
+            Some(d) if d.led_warmup > 0 && d.features.get(m.sub as usize) == Some(&f::COLOR_LED_EFFECTS) => {
+                d.led_warmup -= 1;
+                Message { report: REPORT_LONG, device: m.device, sub: 0xFF, address: m.sub, params: vec![m.address, 0x05] }
             }
             Some(d) => match d.respond(m.sub, m.function(), &m.params) {
                 Ok(params) => Message { report: reply_report(params.len()).max(m.report), device: m.device, sub: m.sub, address: m.address, params },

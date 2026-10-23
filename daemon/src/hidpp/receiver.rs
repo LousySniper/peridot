@@ -16,6 +16,10 @@ use std::time::{Duration, Instant};
 
 const BATTERY_REFRESH: Duration = Duration::from_secs(300);
 const DIRECT_RETRY: Duration = Duration::from_secs(15);
+/// A device that answered only partly (a headset still starting up after
+/// being switched on) is read again this often, this many times.
+const PARTIAL_RETRY: Duration = Duration::from_secs(3);
+const PARTIAL_RETRIES: u32 = 10;
 
 pub struct LogitechBackend {
     ch: Arc<Channel>,
@@ -115,6 +119,8 @@ impl Worker {
 
         let mut last_refresh = Instant::now();
         let mut last_retry = Instant::now();
+        let mut last_partial = Instant::now();
+        let mut partial_tries: HashMap<u8, u32> = HashMap::new();
         loop {
             if self.stop.load(Ordering::Relaxed) {
                 break;
@@ -132,6 +138,10 @@ impl Worker {
                 last_retry = Instant::now();
                 self.try_probe(DEV_DIRECT, Duration::from_millis(800));
             }
+            if last_partial.elapsed() > PARTIAL_RETRY {
+                last_partial = Instant::now();
+                self.retry_partial(&mut partial_tries);
+            }
             if last_refresh.elapsed() > BATTERY_REFRESH {
                 last_refresh = Instant::now();
                 self.refresh_all();
@@ -142,6 +152,30 @@ impl Worker {
             (self.sink)(BackendEvent::Removed(id));
         }
         (self.sink)(BackendEvent::Closed(self.params.key.clone()));
+    }
+
+    /// Read again the devices that are online but answered only partly, and
+    /// announce them once they're complete so saved settings are re-applied.
+    fn retry_partial(&self, tries: &mut HashMap<u8, u32>) {
+        for (idx, dev) in &self.slots {
+            let mut d = dev.lock().unwrap_or_else(|p| p.into_inner());
+            if !(d.state.online && d.incomplete) {
+                tries.remove(idx);
+                continue;
+            }
+            let n = tries.entry(*idx).or_insert(0);
+            if *n >= PARTIAL_RETRIES {
+                continue;
+            }
+            *n += 1;
+            d.read_all();
+            if d.state.online && !d.incomplete {
+                crate::info!("{}: {} answered in full", self.ch.describe(), d.state.name);
+                drop(d);
+                let dyn_handle: DeviceHandle = dev.clone();
+                (self.sink)(BackendEvent::Ready(dyn_handle));
+            }
+        }
     }
 
     fn refresh_all(&self) {

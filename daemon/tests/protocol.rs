@@ -254,6 +254,30 @@ fn logitech_headset_switched_on_after_startup_gets_all_its_settings() {
 }
 
 #[test]
+fn logitech_headset_lighting_that_is_slow_to_wake_still_appears() {
+    let mut sim = SimLogi::headset("G733 Gaming Headset", 0x7a);
+    sim.online = false;
+    sim.dongle = true;
+    let node = SimHidppNode::new("headset", false, vec![(0xFF, sim)]);
+    let (sink, rx) = sink();
+    let t: Arc<dyn Transport> = node.clone();
+    let be = receiver::start(t, Params { key: "h".into(), pid: 0x0B1F, connection: Connection::Usb, short_ok: false }, sink);
+    let _ = wait_ready(&rx);
+    // Switched on, but the lighting needs a moment longer than the rest.
+    node.with_device(0xFF, |d| {
+        d.online = true;
+        d.led_warmup = 2;
+    });
+    node.battery_event(0xFF, 80, false);
+    let first = wait_ready(&rx);
+    assert!(backend::lock(&first).state().sidetone.is_some());
+    assert!(backend::lock(&first).state().zones.is_empty(), "lighting not ready yet");
+    let complete = wait_ready(&rx);
+    assert_eq!(backend::lock(&complete).state().zones.len(), 2);
+    be.stop();
+}
+
+#[test]
 fn logitech_headset_with_locked_equalizer_gets_a_software_one() {
     let mut sim = SimLogi::headset("G733 Gaming Headset", 0x78);
     sim.eq_locked = true;

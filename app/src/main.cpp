@@ -19,7 +19,7 @@ int main(int argc, char *argv[])
     app.setApplicationName("peridot");
     app.setOrganizationName("peridot"); // settings in ~/.config/peridot/peridot.conf
     app.setApplicationDisplayName("Peridot");
-    app.setApplicationVersion("1.0.0");
+    app.setApplicationVersion("1.0.1");
     app.setDesktopFileName("io.github.peridot");
     app.setOrganizationDomain("peridot.github.io");
     app.setQuitOnLastWindowClosed(false);

@@ -12,6 +12,7 @@ qt_add_executable(peridot
     src/main.cpp
     src/daemonclient.cpp src/daemonclient.h
     src/tray.cpp src/tray.h
+    src/singleinstance.cpp src/singleinstance.h
 )
 
 set_source_files_properties(qml/Look.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)

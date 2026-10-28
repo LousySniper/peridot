@@ -1,4 +1,5 @@
 #include "daemonclient.h"
+#include "singleinstance.h"
 #include "tray.h"
 
 #include <QApplication>
@@ -8,6 +9,7 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QSessionManager>
 #include <QStyleHints>
 #include <QTimer>
 
@@ -42,11 +44,23 @@ int main(int argc, char *argv[])
         app.styleHints()->setColorScheme(Qt::ColorScheme::Dark);
 #endif
 
+    const bool screenshot = cli.isSet(shot);
+    SingleInstance instance;
+    if (!screenshot && !instance.claim(cli.isSet(minimized), cli.value(select), cli.value(section)))
+        return 0;
+#ifndef QT_NO_SESSIONMANAGER
+    // The tray entry in autostart already starts us at login; a session
+    // manager restoring the old process as well would open a second copy.
+    QObject::connect(&app, &QGuiApplication::commitDataRequest, &app,
+                     [](QSessionManager &m) { m.setRestartHint(QSessionManager::RestartNever); });
+    QObject::connect(&app, &QGuiApplication::saveStateRequest, &app,
+                     [](QSessionManager &m) { m.setRestartHint(QSessionManager::RestartNever); });
+#endif
+
     QQuickStyle::setStyle("Basic");
 
     DaemonClient client;
     Tray tray(&client);
-    const bool screenshot = cli.isSet(shot);
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("Daemon", &client);
@@ -71,6 +85,12 @@ int main(int argc, char *argv[])
         window->requestActivate();
     };
     QObject::connect(&tray, &Tray::showRequested, window, show);
+    QObject::connect(&instance, &SingleInstance::activateRequested, window,
+                     [window, show](const QString &id, const QString &name) {
+                         if (!name.isEmpty())
+                             window->setProperty("section", name);
+                         show(id);
+                     });
     QObject::connect(&tray, &Tray::quitRequested, &app, &QCoreApplication::quit);
 
     if (screenshot) {
